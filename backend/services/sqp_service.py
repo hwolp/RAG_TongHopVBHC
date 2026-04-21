@@ -1,0 +1,95 @@
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from database import models
+
+
+def _status_str(status_value) -> str:
+    return status_value.value if hasattr(status_value, "value") else str(status_value)
+
+
+def list_all_proposals(db: Session):
+    proposals = db.query(models.SQPProposal).order_by(models.SQPProposal.created_at.desc()).all()
+    return [
+        {
+            "id": p.id,
+            "document_id": p.document_id,
+            "proposed_by": p.proposed_by,
+            "status": _status_str(p.status),
+            "created_at": str(p.created_at),
+        }
+        for p in proposals
+    ]
+
+
+def list_manager_proposals(db: Session, manager_user_id: int):
+    proposals = db.query(models.SQPProposal).filter(
+        models.SQPProposal.proposed_by == manager_user_id
+    ).order_by(models.SQPProposal.created_at.desc()).all()
+
+    return [
+        {
+            "id": p.id,
+            "document_id": p.document_id,
+            "status": _status_str(p.status),
+            "created_at": str(p.created_at),
+        }
+        for p in proposals
+    ]
+
+
+def propose_document_to_sqp(db: Session, manager_user_id: int, document_id: int):
+    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Tai lieu khong ton tai")
+
+    existing = db.query(models.SQPProposal).filter(
+        models.SQPProposal.document_id == document_id,
+        models.SQPProposal.status == models.ProposalStatus.pending,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Tai lieu da co de xuat dang cho duyet")
+
+    proposal = models.SQPProposal(document_id=document_id, proposed_by=manager_user_id)
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+    return {"status": "success", "proposal_id": proposal.id}
+
+
+def cancel_pending_proposal(db: Session, manager_user_id: int, proposal_id: int):
+    proposal = db.query(models.SQPProposal).filter(
+        models.SQPProposal.id == proposal_id,
+        models.SQPProposal.proposed_by == manager_user_id,
+        models.SQPProposal.status == models.ProposalStatus.pending,
+    ).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="De xuat khong ton tai hoac da duoc xu ly")
+
+    db.delete(proposal)
+    db.commit()
+    return {"status": "success"}
+
+
+def approve_proposal(db: Session, proposal_id: int):
+    proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="De xuat khong ton tai")
+
+    proposal.status = models.ProposalStatus.approved
+    doc = db.query(models.Document).filter(models.Document.id == proposal.document_id).first()
+    if doc:
+        doc.scope = models.ScopeEnum.sqp
+
+    db.commit()
+    return {"status": "success", "message": "Da duyet thanh SQP"}
+
+
+def reject_proposal(db: Session, proposal_id: int):
+    proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="De xuat khong ton tai")
+
+    proposal.status = models.ProposalStatus.rejected
+    db.commit()
+    return {"status": "success"}
