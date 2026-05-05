@@ -77,6 +77,21 @@ def ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", se
     }
 
 
+def create_session(db: Session, user_id: int, title: str | None = None):
+    """Tạo phiên hội thoại mới với tên mặc định."""
+    if not title or not title.strip():
+        count = db.query(models.ChatSession).filter(
+            models.ChatSession.user_id == user_id
+        ).count()
+        title = f"Phiên mới {count + 1}"
+
+    session = models.ChatSession(user_id=user_id, title=title.strip())
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return {"id": session.id, "title": session.title, "created_at": str(session.created_at)}
+
+
 def list_sessions(db: Session, user_id: int):
     sessions = db.query(models.ChatSession).filter(
         models.ChatSession.user_id == user_id

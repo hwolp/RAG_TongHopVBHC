@@ -1,5 +1,18 @@
 import re
 from typing import Optional
+import io
+import logging
+import cv2
+import fitz
+import numpy as np
+
+try:
+    import pytesseract
+    from PIL import Image
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    TESSERACT_AVAILABLE = False
+    logging.warning("pytesseract not installed — OCR for scanned PDFs disabled")
 
 try:
     from langchain_chroma import Chroma
@@ -14,6 +27,44 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader, Docx2txtLoader
 from langchain_core.documents import Document as LCDocument
 from config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
+
+# Sử dụng pytesseract cho OCR Vietnamese
+
+def _ocr_page_to_text(page) -> str:
+    if not TESSERACT_AVAILABLE:
+        logging.warning("pytesseract not available, skipping OCR")
+        return ""
+    
+    try:
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        
+        # --- SỬA TẠI ĐÂY: Tăng độ nét (DPI) để OCR chính xác hơn ---
+        matrix = fitz.Matrix(2, 2) # Zoom 2x, giúp chữ rõ nét hơn rất nhiều
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+        
+        img_data = pix.tobytes("ppm")
+        img = Image.open(io.BytesIO(img_data))
+        
+        # --- SỬA TẠI ĐÂY: Thêm config để Tesseract tập trung tìm văn bản ---
+        custom_config = r'--oem 3 --psm 6' 
+        text = pytesseract.image_to_string(img, lang='vie', config=custom_config)
+        
+        extracted_text = text.strip()
+
+        # --- KIỂM TRA THÀNH CÔNG ---
+        if not extracted_text:
+            logging.warning(f"Trang {page.number}: OCR chạy xong nhưng KHÔNG tìm thấy chữ.")
+        else:
+            logging.info(f"Trang {page.number}: OCR thành công, lấy được {len(extracted_text)} ký tự.")
+            # In thử 50 ký tự đầu để kiểm tra mắt
+            print(f"DEBUG Trang {page.number}: {extracted_text[:50]}...")
+        print(f"Ket qua: {text}")
+        return extracted_text
+    
+    except Exception as e:
+        logging.error(f"OCR failed at page {page.number}: {e}")
+        return ""
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Patterns nhận diện văn bản hành chính Việt Nam
@@ -32,14 +83,64 @@ _ADMIN_DOC_PATTERNS = [
 
 # Ranh giới tách chunk cho văn bản hành chính — ưu tiên từ lớn đến nhỏ
 _ADMIN_SEPARATORS = [
-    r"(?=\nĐiều\s+\d+[\s\.\:])",   # Điều X:
-    r"(?=\nKhoản\s+\d+[\s\.\:])",  # Khoản X:
-    r"(?=\nĐiểm\s+[a-zđ]\))",      # Điểm a)
-    r"\n\n",
+    r"(?=\nNghị\s+định\s+[\d/]+)",      # Nghị định (bao gồm số hiệu /NĐ-CP)
+    r"(?=\nThông\s+tư\s+[\d/]+)",        # Thông tư
+    r"(?=\nQuyết\s+định\s+[\d/]+)",      # Thêm Quyết định (rất phổ biến)
+    r"(?=\nChương\s+[IVXLCDMivxlcdm\d]+)", # Chương dùng số La Mã hoặc số thường
+    r"(?=\nMục\s+\d+)",                 # Thêm Mục (dưới Chương, trên Điều)
+    r"(?=\nĐiều\s+\d+)",                 
+    r"(?=\nKhoản\s+\d+)",                
+    r"(?=\n[a-zđ]\)\s+)",                # Điểm a), b)... ở đầu dòng
+    r"\n\n", 
+    r"\.\s+",                            # Dấu chấm kết thúc câu
     r"\n",
-    r"\. ",
     r" ",
 ]
+
+
+# Separator thông thường
+_NORMAL_SEPARATORS = ["\n\n", "\n", ".", " "]
+
+
+def _is_page_scanned(page_text: str, min_text_ratio: float = 0.1) -> bool:
+    """
+    Phát hiện nếu một trang PDF là scan (ít text được extracted từ layer).
+    
+    Args:
+        page_text: Text extracted từ PDF page
+        min_text_ratio: Nếu extracted text < 10% expected, coi là scanned
+    
+    Returns:
+        True nếu page có vẻ là scan (thiếu text), False nếu là text-based PDF
+    """
+    # Nếu page text quá ngắn → có khả năng là scan
+    # Giả sử một trang text-based PDF nên có ít nhất 500 ký tự
+    return len(page_text.strip()) < 500
+
+
+def _extract_images_from_pdf_page(page):
+    """
+    Extract tất cả images từ một PDF page object (fitz/PyMuPDF).
+    Returns list of PIL Image objects.
+    """
+    from PIL import Image
+    images = []
+    try:
+        image_list = page.get_images()
+        for img_index in image_list:
+            xref = page.get_image(img_index)
+            pix = page.parent.get_pixmap(xref=xref)
+            # Convert pixmap to PIL Image
+            img_data = pix.tobytes("ppm")
+            img = Image.open(io.BytesIO(img_data))
+            images.append(img)
+    except Exception as e:
+        logging.warning(f"Failed to extract images from page: {e}")
+    return images
+
+
+# (Old OCR function removed - replaced above)
+
 
 # Separator thông thường
 _NORMAL_SEPARATORS = ["\n\n", "\n", ".", " "]
@@ -136,34 +237,71 @@ class ChromaDBManager:
         force_admin_chunking: bool = False,
     ) -> int:
         """
-        Load PDF, tự động phát hiện loại văn bản và chunking phù hợp.
+        Load PDF, detect scanned pages, OCR nếu cần, then chunk và store.
 
-        - Văn bản hành chính (Điều/Khoản/Điểm) → chunk theo cấu trúc điều khoản
-        - Văn bản thông thường → chunk theo ký tự (chunk_size=1000)
+        Strategy:
+        - Load pages với PyMuPDFLoader
+        - Detect trang scan (nếu extracted text quá ít)
+        - OCR trang scan và augment text
+        - Auto-detect loại văn bản và chunking phù hợp
+        - Lưu vào ChromaDB
 
         Args:
-            force_admin_chunking: Bắt buộc dùng chunking hành chính kể cả khi không detect được.
+            force_admin_chunking: Bắt buộc dùng chunking hành chính
         Returns:
-            Số lượng chunks đã lưu vào ChromaDB.
+            Số lượng chunks đã lưu
         """
+        import fitz  # PyMuPDF
+        
         loader = PyMuPDFLoader(file_path)
         pages = loader.load()
 
         if not pages:
             return 0
 
+        # Enhance pages với OCR nếu detect scan
+        pdf_doc = fitz.open(file_path)
+        enhanced_pages = []
+        
+        for page_idx, page in enumerate(pages):
+            original_text = page.page_content
+            
+            # Check nếu trang này là scan (thiếu text)
+            if _is_page_scanned(original_text):
+                logging.info(f"Page {page_idx} detected as scanned, running OCR...")
+                try:
+                    pdf_page = pdf_doc[page_idx]
+                    ocr_text = _ocr_page_to_text(pdf_page)
+                    
+                    if ocr_text.strip():
+                        # Merge: OCR text + original text (nếu có)
+                        if original_text.strip():
+                            page.page_content = f"{original_text}\n\n[OCR Result]\n{ocr_text}"
+                        else:
+                            page.page_content = ocr_text
+                        logging.info(f"Page {page_idx} OCR success: {len(ocr_text)} chars extracted")
+                    else:
+                        logging.warning(f"Page {page_idx} OCR returned empty result")
+                except Exception as e:
+                    logging.error(f"OCR failed for page {page_idx}: {e}")
+                    # Keep original text on OCR failure
+            
+            enhanced_pages.append(page)
+        
+        pdf_doc.close()
+
         # Nhận diện loại văn bản
-        sample_text = "\n".join(p.page_content for p in pages[:5])  # Sample 5 trang đầu
+        sample_text = "\n".join(p.page_content for p in enhanced_pages[:5])
         is_admin = force_admin_chunking or _is_administrative_text(sample_text)
 
         if is_admin:
-            splits = _split_administrative(pages)
+            splits = _split_administrative(enhanced_pages)
             chunk_strategy = "administrative"
         else:
-            splits = _split_normal(pages)
+            splits = _split_normal(enhanced_pages)
             chunk_strategy = "normal"
 
-        # Gắn metadata cho tất cả các chunks
+        # Gắn metadata
         for split in splits:
             split.metadata.update(
                 {
@@ -192,15 +330,14 @@ class ChromaDBManager:
         force_admin_chunking: bool = False,
     ) -> int:
         """
-        Load Word (.docx), tự động phát hiện loại văn bản và chunking phù hợp.
+        Load Word (.docx), auto-detect document type and apply chunking.
 
-        - Văn bản hành chính (Điều/Khoản/Điểm) → chunk theo cấu trúc điều khoản
-        - Văn bản thông thường → chunk theo ký tự (chunk_size=1000)
+        Note: Word files rarely scanned, but support is added for consistency.
 
         Args:
-            force_admin_chunking: Bắt buộc dùng chunking hành chính kể cả khi không detect được.
+            force_admin_chunking: Force administrative chunking even if not detected
         Returns:
-            Số lượng chunks đã lưu vào ChromaDB.
+            Number of chunks saved
         """
         loader = Docx2txtLoader(file_path)
         pages = loader.load()
@@ -208,8 +345,6 @@ class ChromaDBManager:
         if not pages:
             return 0
 
-        # Mặc định docx2txt thường gộp nội dung thành 1 page duy nhất, 
-        # nhưng ta vẫn dùng vòng lặp để an toàn nếu dùng loader khác sau này.
         sample_text = "\n".join(p.page_content for p in pages[:5]) 
         is_admin = force_admin_chunking or _is_administrative_text(sample_text)
 
@@ -220,7 +355,6 @@ class ChromaDBManager:
             splits = _split_normal(pages)
             chunk_strategy = "normal"
 
-        # Gắn metadata cho tất cả các chunks
         for split in splits:
             split.metadata.update(
                 {

@@ -244,13 +244,20 @@ export default function Chat() {
   };
 
   // ── Session Management ──────────────────────────────────────────────────────
-  const handleNewSession = () => {
-    setActiveSession(null);
-    setMessages([]);
-    setHasMoreMessages(false);
-    setNextBeforeId(null);
-    setAttachedDocs([]);
-    setShowPicker(false);
+  const handleNewSession = async () => {
+    try {
+      const r = await api.post("/employee/sessions");
+      const newSession = r.data;
+      await fetchSessions();
+      setActiveSession(newSession.id);
+      setMessages([]);
+      setHasMoreMessages(false);
+      setNextBeforeId(null);
+      setAttachedDocs([]);
+      setShowPicker(false);
+    } catch (err: any) {
+      alert("Không thể tạo phiên mới: " + (err.response?.data?.detail || err.message));
+    }
   };
 
   const handleDeleteSession = async (e: React.MouseEvent, id: number) => {

@@ -22,6 +22,10 @@ class AttachDocRequest(BaseModel):
     doc_id: int
 
 
+class CreateSessionRequest(BaseModel):
+    title: str | None = None
+
+
 @router.post("/chat/ask")
 def ask_ai(payload: ChatRequest, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return chat_service.ask_ai(
@@ -106,6 +110,15 @@ def delete_session_document(
     return document_service.delete_session_document(db, user["id"], session_id, doc_id)
 
 
+@router.post("/chat/sessions")
+def create_session(
+    payload: CreateSessionRequest = CreateSessionRequest(),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return chat_service.create_session(db, user["id"], payload.title)
+
+
 @router.get("/chat/sessions")
 def list_sessions(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return chat_service.list_sessions(db, user["id"])
@@ -167,6 +180,15 @@ async def legacy_upload_session_document(
     user: dict = Depends(get_current_user),
 ):
     return await upload_session_document(session_id, file, db, user)
+
+
+@router.post("/employee/sessions")
+def legacy_create_session(
+    payload: CreateSessionRequest = CreateSessionRequest(),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return create_session(payload, db, user)
 
 
 @router.get("/employee/sessions")
