@@ -6,7 +6,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 240
 
 # === MySQL Config ===
-MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://root:hien01012005@localhost:3306/rag_db")
+MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql:///rag_db")
 
 # === Ollama Config ===
 OLLAMA_BASE_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
