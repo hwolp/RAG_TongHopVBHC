@@ -49,6 +49,19 @@ def sync_schema(engine: Engine) -> None:
             except Exception:
                 pass
 
+        if not _column_exists(engine, "shared_documents", "shared_with_user_id"):
+            conn.execute(text("ALTER TABLE shared_documents ADD COLUMN shared_with_user_id INT NULL"))
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE shared_documents "
+                        "ADD CONSTRAINT fk_shared_documents_user "
+                        "FOREIGN KEY (shared_with_user_id) REFERENCES users(id)"
+                    )
+                )
+            except Exception:
+                pass
+
         # Ensure new session_doc_attachments table is created
         inspector = inspect(engine)
         if "session_doc_attachments" not in inspector.get_table_names():

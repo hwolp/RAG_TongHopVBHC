@@ -38,14 +38,16 @@ def _build_test_app(db_session: Session, current_user: dict) -> FastAPI:
 
 
 def _seed(db: Session) -> None:
+    admin_dept = models.Department(id=0, name="Admin")
     dept = models.Department(id=1, name="IT")
+    dept_b = models.Department(id=2, name="Kế Toán")
     admin_user = models.User(
         id=1,
         username="admin",
         hashed_password="x",
         full_name="Admin",
         role=models.RoleEnum.admin,
-        department_id=1,
+        department_id=0,
     )
     manager_user = models.User(
         id=2,
@@ -69,7 +71,22 @@ def _seed(db: Session) -> None:
         file_path="uploads/personal/personal.pdf",
         scope=models.ScopeEnum.personal,
         owner_id=3,
-        version_number=1,
+    )
+    department_doc_a = models.Document(
+        id=11,
+        filename="dept-a.pdf",
+        file_path="uploads/department/dept-a.pdf",
+        scope=models.ScopeEnum.department,
+        owner_id=2,
+        department_id=1,
+    )
+    department_doc_b = models.Document(
+        id=12,
+        filename="dept-b.pdf",
+        file_path="uploads/department/dept-b.pdf",
+        scope=models.ScopeEnum.department,
+        owner_id=2,
+        department_id=2,
     )
     session = models.ChatSession(id=20, user_id=3, title="s1")
     message = models.ChatMessage(
@@ -80,7 +97,7 @@ def _seed(db: Session) -> None:
         sources='["10","11"]',
     )
     prompt = models.SavedPrompt(id=40, user_id=3, content="saved question")
-    db.add_all([dept, admin_user, manager_user, employee_user, personal_doc, session, message, prompt])
+    db.add_all([admin_dept, dept, dept_b, admin_user, manager_user, employee_user, personal_doc, department_doc_a, department_doc_b, session, message, prompt])
     db.commit()
 
 
@@ -133,6 +150,23 @@ def test_admin_config_crud():
 
     deleted = client.delete(f"/admin/configs/{config_id}")
     assert deleted.status_code == 200
+
+
+def test_admin_can_list_all_department_documents():
+    client, db, _ = _client_and_db()
+
+    response = client.get("/admin/documents/department")
+    assert response.status_code == 200
+    document_ids = {item["id"] for item in response.json()}
+    assert {11, 12}.issubset(document_ids)
+
+    tree_response = client.get("/documents/tree")
+    assert tree_response.status_code == 200
+    tree = tree_response.json()
+    assert "IT" in tree["department"]
+    assert "Kế Toán" in tree["department"]
+
+    db.close()
 
 
 def test_document_trash_restore_and_version_flow(tmp_path):

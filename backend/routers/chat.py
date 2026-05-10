@@ -208,8 +208,7 @@ def legacy_session_messages(
 
 
 @router.put("/employee/sessions/{session_id}")
-def legacy_rename_session(session_id: int, title: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    payload = RenameSessionRequest(title=title)
+def legacy_rename_session(session_id: int, payload: RenameSessionRequest, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return rename_session(session_id, payload, db, user)
 
 

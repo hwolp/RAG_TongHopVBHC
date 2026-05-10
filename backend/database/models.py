@@ -156,6 +156,7 @@ class SharedDocument(Base):
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"))
     shared_with_dept_id = Column(Integer, ForeignKey("departments.id"))
+    shared_with_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     shared_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

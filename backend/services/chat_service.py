@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from database import models
+from services.access_policy import can_access_document
 
 
 def ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", session_id: Optional[int] = None):
@@ -36,15 +37,21 @@ def ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", se
 
     manager = ChromaDBManager()
     user_model = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user_model:
+        raise HTTPException(status_code=404, detail="Khong tim thay nguoi dung")
     dept_id = user_model.department_id if user_model else -1
     normalized_scope = "sqp" if scope == "company" else scope
+    if normalized_scope == "department" and user_model.role == models.RoleEnum.employee:
+        raise HTTPException(status_code=403, detail="Nhan vien chi duoc chat tren tai lieu ca nhan va tai lieu cong ty")
 
     # Lấy doc_ids đính kèm thủ công vào session (từ Folder Tree picker)
-    attached_doc_ids = [
-        a.doc_id for a in db.query(models.SessionDocAttachment).filter(
-            models.SessionDocAttachment.session_id == session.id
-        ).all()
-    ]
+    attached_doc_ids = []
+    for attachment in db.query(models.SessionDocAttachment).filter(
+        models.SessionDocAttachment.session_id == session.id
+    ).all():
+        doc = db.query(models.Document).filter(models.Document.id == attachment.doc_id).first()
+        if can_access_document(db, user_model, doc):
+            attached_doc_ids.append(attachment.doc_id)
 
     context, sources = manager.search_context_with_filter(
         query=question,

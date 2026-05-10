@@ -25,4 +25,5 @@ def require_role(*allowed_roles: str):
 
 require_admin = require_role("admin")
 require_manager = require_role("admin", "manager")
+require_manager_only = require_role("manager")
 require_any = get_current_user  # Bất kì user đã đăng nhập

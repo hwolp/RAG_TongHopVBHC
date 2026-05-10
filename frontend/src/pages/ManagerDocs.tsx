@@ -2,9 +2,27 @@ import { useState, useEffect } from "react";
 import api from "../api";
 import {
   Upload, Search, Send, RefreshCw, LayoutGrid, List,
-  FileText, Trash2, BadgeCheck,
+  FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
+
+type Department = {
+  id: number;
+  name: string;
+};
+
+type ShareRecord = {
+  id: number;
+  document_id: number;
+  document_filename: string;
+  document_department_name?: string | null;
+  shared_with_dept_id?: number | null;
+  shared_with_department_name?: string | null;
+  shared_with_user_id?: number | null;
+  shared_with_username?: string | null;
+  shared_by: number;
+  created_at: string;
+};
 
 type Doc = {
   id: number;
@@ -29,11 +47,38 @@ export default function ManagerDocs() {
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [indexingId, setIndexingId] = useState<number | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [shares, setShares] = useState<ShareRecord[]>([]);
+  const [shareDocId, setShareDocId] = useState<string>("");
+  const [shareTargetDeptId, setShareTargetDeptId] = useState<string>("");
+  const [shareTargetUsername, setShareTargetUsername] = useState("");
+  const [shareMode, setShareMode] = useState<"department" | "user">("department");
+  const [sharing, setSharing] = useState(false);
+
+  const refreshShares = async () => {
+    try {
+      const r = await api.get("/manager/shares");
+      setShares(r.data);
+    } catch {}
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const r = await api.get("/manager/departments");
+      setDepartments(r.data);
+      if (!shareTargetDeptId && r.data.length > 0) {
+        setShareTargetDeptId(String(r.data[0].id));
+      }
+    } catch {}
+  };
 
   const fetchDocs = async () => {
     try {
       const r = await api.get(`/manager/department/documents?search=${encodeURIComponent(search)}`);
       setDocs(r.data);
+      if (!shareDocId && r.data.length > 0) {
+        setShareDocId(String(r.data[0].id));
+      }
     } catch {}
   };
 
@@ -50,7 +95,12 @@ export default function ManagerDocs() {
     setTreeLoading(false);
   };
 
-  useEffect(() => { fetchDocs(); fetchProposals(); }, []);
+  useEffect(() => {
+    fetchDocs();
+    fetchProposals();
+    fetchDepartments();
+    refreshShares();
+  }, []);
 
   const switchToTree = () => {
     setViewMode("tree");
@@ -106,6 +156,36 @@ export default function ManagerDocs() {
     setIndexingId(null);
   };
 
+  const handleShare = async () => {
+    if (!shareDocId) return;
+    if (shareMode === "department" && !shareTargetDeptId) return;
+    if (shareMode === "user" && !shareTargetUsername.trim()) return;
+
+    setSharing(true);
+    try {
+      if (shareMode === "department") {
+        await api.post(`/manager/share/document/${shareDocId}/to-dept/${shareTargetDeptId}`);
+      } else {
+        await api.post(`/manager/share/document/${shareDocId}/to-user/${encodeURIComponent(shareTargetUsername.trim())}`);
+      }
+      await refreshShares();
+      alert("Đã chia sẻ tài liệu.");
+    } catch (err: any) {
+      alert("Lỗi chia sẻ: " + (err.response?.data?.detail || err.message));
+    }
+    setSharing(false);
+  };
+
+  const handleRevokeShare = async (shareId: number) => {
+    if (!confirm("Hủy chia sẻ tài liệu này?")) return;
+    try {
+      await api.delete(`/manager/share/${shareId}`);
+      await refreshShares();
+    } catch (err: any) {
+      alert("Lỗi hủy chia sẻ: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const proposedDocIds = new Set(proposals.map(p => p.document_id));
 
   // Tree attach handler used as "propose" in FolderTree context
@@ -136,6 +216,125 @@ export default function ManagerDocs() {
             {uploading ? "Đang tải..." : "Tải lên"}
             <input type="file" className="hidden" onChange={handleUpload} />
           </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Share2 className="w-5 h-5 text-emerald-600" />
+            <div>
+              <h2 className="font-semibold text-gray-900">Chia sẻ liên phòng</h2>
+              <p className="text-sm text-gray-500 mt-1">Chọn tài liệu phòng ban của bạn rồi chia sẻ sang phòng khác hoặc một tài khoản cụ thể.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <select
+              value={shareDocId}
+              onChange={(event) => setShareDocId(event.target.value)}
+              className="w-full border rounded-lg px-3 py-2.5 text-sm"
+            >
+              {docs.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  #{doc.id} - {doc.filename}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex rounded-lg border overflow-hidden text-sm">
+              <button
+                onClick={() => setShareMode("department")}
+                className={`flex-1 px-3 py-2 ${shareMode === "department" ? "bg-emerald-600 text-white" : "bg-white text-gray-600"}`}
+              >
+                Chia sẻ phòng ban
+              </button>
+              <button
+                onClick={() => setShareMode("user")}
+                className={`flex-1 px-3 py-2 ${shareMode === "user" ? "bg-emerald-600 text-white" : "bg-white text-gray-600"}`}
+              >
+                Chia sẻ user
+              </button>
+            </div>
+
+            {shareMode === "department" ? (
+              <select
+                value={shareTargetDeptId}
+                onChange={(event) => setShareTargetDeptId(event.target.value)}
+                className="w-full border rounded-lg px-3 py-2.5 text-sm"
+              >
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={shareTargetUsername}
+                onChange={(event) => setShareTargetUsername(event.target.value)}
+                className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                placeholder="Nhập username người nhận"
+              />
+            )}
+
+            <button
+              onClick={() => void handleShare()}
+              disabled={sharing || !shareDocId || (shareMode === "department" ? !shareTargetDeptId : !shareTargetUsername.trim())}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <UserPlus className="w-4 h-4" />
+              {sharing ? "Đang chia sẻ..." : "Gửi chia sẻ"}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Users className="w-5 h-5 text-blue-600" />
+            <div>
+              <h2 className="font-semibold text-gray-900">Chia sẻ của tôi</h2>
+              <p className="text-sm text-gray-500 mt-1">Theo dõi các lượt chia sẻ liên phòng đã tạo từ tài liệu phòng ban của mình.</p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">Tài liệu</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-600">Chia sẻ tới</th>
+                  <th className="px-3 py-2 text-right font-semibold text-gray-600">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shares.map((share) => (
+                  <tr key={share.id} className="border-t">
+                    <td className="px-3 py-2 text-gray-700">{share.document_filename}</td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {share.shared_with_department_name ? `Phòng: ${share.shared_with_department_name}` : share.shared_with_username ? `User: ${share.shared_with_username}` : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => void handleRevokeShare(share.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs bg-red-50 text-red-600 hover:bg-red-100"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Hủy
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {shares.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-8 text-center text-gray-400">
+                      Chưa có lượt chia sẻ nào
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

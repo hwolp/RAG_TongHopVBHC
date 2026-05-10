@@ -1,9 +1,14 @@
 from fastapi import APIRouter, Depends, File, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db_config import get_db
-from middleware.auth_middleware import get_current_user, require_manager
+from middleware.auth_middleware import get_current_user, require_admin, require_manager
 from services import document_service, folder_service
+
+
+class UpdateSQPDocumentRequest(BaseModel):
+    filename: str | None = None
 
 router = APIRouter(tags=["Tài liệu"])
 
@@ -31,7 +36,7 @@ def delete_personal_document(doc_id: int, db: Session = Depends(get_db), user: d
 
 
 @router.get("/documents/department")
-def list_department_documents(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+def list_department_documents(search: str = "", db: Session = Depends(get_db), user: dict = Depends(require_manager)):
     return document_service.list_department_documents(db, user["id"], search)
 
 
@@ -55,9 +60,42 @@ def browse_sqp_documents(search: str = "", db: Session = Depends(get_db), _: dic
     return document_service.list_sqp_documents(db, search)
 
 
+@router.post("/documents/sqp")
+async def upload_sqp_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin_user: dict = Depends(require_admin),
+):
+    return await document_service.upload_sqp_document_for_admin(db, admin_user["id"], file)
+
+
+@router.put("/documents/sqp/{doc_id}")
+def update_sqp_document(
+    doc_id: int,
+    payload: UpdateSQPDocumentRequest,
+    db: Session = Depends(get_db),
+    admin_user: dict = Depends(require_admin),
+):
+    return document_service.update_sqp_document_for_admin(db, admin_user["id"], doc_id, payload.filename)
+
+
+@router.delete("/documents/sqp/{doc_id}")
+def delete_sqp_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    admin_user: dict = Depends(require_admin),
+):
+    return document_service.delete_sqp_document_for_admin(db, admin_user["id"], doc_id)
+
+
 @router.get("/documents/company")
 def browse_company_documents(search: str = "", db: Session = Depends(get_db), _: dict = Depends(get_current_user)):
     return document_service.list_company_documents(db, search)
+
+
+@router.get("/documents/shared")
+def list_shared_documents(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.list_shared_documents(db, user["id"], search)
 
 
 @router.get("/documents/sqp/{doc_id}")
@@ -93,6 +131,8 @@ def legacy_list_department_docs(search: str = "", db: Session = Depends(get_db),
 
 @router.get("/employee/department/documents")
 def legacy_employee_department_docs(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    if user.get("role") == "employee":
+        return document_service.list_shared_documents(db, user["id"], search)
     return document_service.list_department_documents(db, user["id"], search)
 
 
@@ -114,6 +154,11 @@ def legacy_browse_sqp(search: str = "", db: Session = Depends(get_db), user: dic
 @router.get("/employee/company")
 def legacy_browse_company(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return document_service.list_company_documents(db, search)
+
+
+@router.get("/employee/shared")
+def legacy_shared_docs(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.list_shared_documents(db, user["id"], search)
 
 
 @router.get("/employee/sqp/{doc_id}")

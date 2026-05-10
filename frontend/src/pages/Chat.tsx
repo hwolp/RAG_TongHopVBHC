@@ -49,6 +49,9 @@ export default function Chat() {
   // Attached docs
   const [attachedDocs, setAttachedDocs] = useState<AttachedDoc[]>([]);
 
+  // Session documents (uploaded to current session)
+  const [sessionDocs, setSessionDocs] = useState<any[]>([]);
+
   // Rename session
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameInput, setRenameInput] = useState("");
@@ -80,6 +83,13 @@ export default function Chat() {
     } catch { setAttachedDocs([]); }
   };
 
+  const fetchSessionDocs = async (sessionId: number) => {
+    try {
+      const r = await api.get(`/chat/sessions/${sessionId}/documents`);
+      setSessionDocs(r.data ?? []);
+    } catch { setSessionDocs([]); }
+  };
+
   const loadSession = async (id: number) => {
     setActiveSession(id);
     setHasMoreMessages(false);
@@ -93,6 +103,7 @@ export default function Chat() {
       requestAnimationFrame(scrollToBottom);
     } catch { setMessages([]); }
     fetchAttachments(id);
+    fetchSessionDocs(id);
   };
 
   const loadOlderMessages = async () => {
@@ -142,6 +153,10 @@ export default function Chat() {
       if (!activeSession && r.data.session_id) {
         setActiveSession(r.data.session_id);
         fetchAttachments(r.data.session_id);
+        fetchSessionDocs(r.data.session_id);
+      } else if (activeSession) {
+        // Refresh file lists to keep in sync
+        fetchSessionDocs(activeSession);
       }
       fetchSessions();
     } catch (err: any) {
@@ -167,15 +182,19 @@ export default function Chat() {
     formData.append("file", file);
     setUploading(true);
     try {
-      const r = await api.post(
+      await api.post(
         `/employee/sessions/${activeSession}/documents/upload`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
       setMessages(prev => [...prev, {
         id: Date.now(), sender: "ai",
-        content: `✅ Đã tải file **"${file.name}"** vào session (doc_id=${r.data.doc_id}).\nBạn có thể đặt câu hỏi về nội dung file này ngay bây giờ.`,
+        content: `✅ Đã tải file **"${file.name}"** vào session.`,
       }]);
+      // Fetch updated session documents
+      if (activeSession) {
+        await fetchSessionDocs(activeSession);
+      }
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
       setMessages(prev => [...prev, {
@@ -216,15 +235,8 @@ export default function Chat() {
     if (!activeSession) return;
     try {
       await api.post(`/chat/sessions/${activeSession}/attach`, { doc_id: doc.id });
-      setAttachedDocs(prev => {
-        if (prev.some(a => a.doc_id === doc.id)) return prev;
-        return [...prev, {
-          doc_id: doc.id,
-          filename: doc.filename,
-          scope: doc.scope,
-          is_indexed: doc.is_indexed,
-        }];
-      });
+      // Refetch attachments to ensure data is in sync
+      await fetchAttachments(activeSession);
       setMessages(prev => [...prev, {
         id: Date.now(), sender: "ai",
         content: `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nAI sẽ dùng nội dung tài liệu này khi trả lời câu hỏi.`,
@@ -239,8 +251,11 @@ export default function Chat() {
     if (!activeSession) return;
     try {
       await api.delete(`/chat/sessions/${activeSession}/attach/${docId}`);
-      setAttachedDocs(prev => prev.filter(a => a.doc_id !== docId));
-    } catch {}
+      // Refetch attachments to ensure data is in sync
+      await fetchAttachments(activeSession);
+    } catch (err: any) {
+      alert("Lỗi gỡ đính kèm: " + (err.response?.data?.detail || err.message));
+    }
   };
 
   // ── Session Management ──────────────────────────────────────────────────────
@@ -254,6 +269,7 @@ export default function Chat() {
       setHasMoreMessages(false);
       setNextBeforeId(null);
       setAttachedDocs([]);
+      setSessionDocs([]);
       setShowPicker(false);
     } catch (err: any) {
       alert("Không thể tạo phiên mới: " + (err.response?.data?.detail || err.message));
@@ -265,7 +281,12 @@ export default function Chat() {
     if (!confirm("Xóa phiên hội thoại này?")) return;
     try {
       await api.delete(`/employee/sessions/${id}`);
-      if (activeSession === id) { setActiveSession(null); setMessages([]); setAttachedDocs([]); }
+      if (activeSession === id) { 
+        setActiveSession(null); 
+        setMessages([]); 
+        setAttachedDocs([]);
+        setSessionDocs([]);
+      }
       fetchSessions();
     } catch {}
   };
@@ -394,6 +415,34 @@ export default function Chat() {
               <span key={a.doc_id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-emerald-300 rounded-full text-emerald-700 shadow-sm">
                 {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
                 <button onClick={() => handleDetach(a.doc_id)} className="text-emerald-400 hover:text-red-500 ml-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Session uploaded documents */}
+        {sessionDocs.length > 0 && (
+          <div className="px-4 py-2 bg-blue-50 border-b flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-blue-700 font-semibold flex-shrink-0">📄 File trong session:</span>
+            {sessionDocs.map((d: any) => (
+              <span key={d.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-blue-300 rounded-full text-blue-700 shadow-sm">
+                {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
+                <button 
+                  onClick={async () => {
+                    if (!activeSession) return;
+                    if (!confirm(`Xóa file "${d.filename}"?`)) return;
+                    try {
+                      await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
+                      // Refetch session documents to keep in sync
+                      await fetchSessionDocs(activeSession);
+                    } catch (err: any) {
+                      alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
+                    }
+                  }} 
+                  className="text-blue-400 hover:text-red-500 ml-0.5"
+                >
                   <X className="w-3 h-3" />
                 </button>
               </span>

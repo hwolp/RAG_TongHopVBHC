@@ -31,6 +31,7 @@ export default function Sidebar() {
         {user?.role === 'admin' && (<>
           <p className="text-[10px] font-bold text-slate-500 tracking-widest mb-2 px-3 uppercase mt-6">Hệ thống</p>
           <Link to="/admin/users" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/users')}`}><Users className="w-4 h-4" />Tài Khoản</Link>
+          <Link to="/admin/documents" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/documents')}`}><FolderKanban className="w-4 h-4" />Tài liệu & Chia sẻ</Link>
           <Link to="/admin/system" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/system')}`}><Settings className="w-4 h-4" />Bảo Trì Hệ Thống</Link>
         </>)}
       </nav>

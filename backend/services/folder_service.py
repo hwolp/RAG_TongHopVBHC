@@ -3,6 +3,7 @@ folder_service.py — Cung cấp cấu trúc cây thư mục tài liệu theo sc
 """
 from sqlalchemy.orm import Session
 from database import models
+from services.access_policy import can_access_document
 
 
 def _doc_to_dict(doc: models.Document) -> dict:
@@ -31,6 +32,8 @@ def get_folder_tree(db: Session, user_id: int) -> dict:
     }
     """
     user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        return {"personal": [], "department": {}, "company": []}
     dept_id = user.department_id if user else None
 
     # ── 1. Tài liệu cá nhân ──
@@ -42,7 +45,16 @@ def get_folder_tree(db: Session, user_id: int) -> dict:
 
     # ── 2. Tài liệu phòng ban ──
     dept_tree: dict[str, list] = {}
-    if dept_id:
+    if user.role == models.RoleEnum.admin and dept_id == 0:
+        dept_docs = db.query(models.Document).filter(
+            models.Document.scope == models.ScopeEnum.department,
+        ).order_by(models.Document.uploaded_at.desc()).all()
+
+        all_departments = db.query(models.Department).filter(models.Department.id != 0).order_by(models.Department.name.asc()).all()
+        for department in all_departments:
+            department_docs = [doc for doc in dept_docs if doc.department_id == department.id]
+            dept_tree[department.name] = [_doc_to_dict(doc) for doc in department_docs]
+    elif user.role in (models.RoleEnum.manager, models.RoleEnum.admin) and dept_id:
         dept_docs = db.query(models.Document).filter(
             models.Document.department_id == dept_id,
             models.Document.scope == models.ScopeEnum.department,
@@ -51,6 +63,16 @@ def get_folder_tree(db: Session, user_id: int) -> dict:
         dept_obj = db.query(models.Department).filter(models.Department.id == dept_id).first()
         dept_name = dept_obj.name if dept_obj else f"Phòng ban #{dept_id}"
         dept_tree[dept_name] = [_doc_to_dict(d) for d in dept_docs]
+    elif user.role == models.RoleEnum.employee:
+        shared_doc_ids_query = db.query(models.SharedDocument.document_id).filter(
+            (models.SharedDocument.shared_with_user_id == user.id)
+            | (models.SharedDocument.shared_with_dept_id == user.department_id)
+        )
+        shared_docs = db.query(models.Document).filter(
+            models.Document.id.in_(shared_doc_ids_query),
+            models.Document.scope == models.ScopeEnum.department,
+        ).order_by(models.Document.uploaded_at.desc()).all()
+        dept_tree["Duoc chia se lien phong"] = [_doc_to_dict(d) for d in shared_docs]
     else:
         dept_tree = {}
 
@@ -96,6 +118,11 @@ def attach_doc_to_session(db: Session, user_id: int, session_id: int, doc_id: in
     if not doc:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Tài liệu không tồn tại")
+
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not can_access_document(db, user, doc):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Khong co quyen dinh kem tai lieu nay")
 
     # Kiểm tra đã attach chưa
     existing = db.query(models.SessionDocAttachment).filter(
@@ -147,6 +174,7 @@ def list_session_attachments(db: Session, user_id: int, session_id: int) -> list
     if not session:
         return []
 
+    user = db.query(models.User).filter(models.User.id == user_id).first()
     attachments = db.query(models.SessionDocAttachment).filter(
         models.SessionDocAttachment.session_id == session_id
     ).all()
@@ -154,7 +182,7 @@ def list_session_attachments(db: Session, user_id: int, session_id: int) -> list
     result = []
     for att in attachments:
         doc = db.query(models.Document).filter(models.Document.id == att.doc_id).first()
-        if doc:
+        if doc and can_access_document(db, user, doc):
             result.append({
                 "doc_id": att.doc_id,
                 "filename": doc.filename,

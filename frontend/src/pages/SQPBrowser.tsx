@@ -1,32 +1,120 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import api from "../api";
-import { BookOpen, Search, Download, FileText } from "lucide-react";
+import { BookOpen, Search, Download, FileText, RefreshCw, Upload, PencilLine, Trash2, X } from "lucide-react";
+import { useAuth } from "../hooks/useAuth";
+
+type SQPDocument = {
+  id: number;
+  filename: string;
+  uploaded_at: string;
+  owner_id?: number | null;
+};
 
 export default function SQPBrowser() {
-  const [docs, setDocs] = useState<any[]>([]);
-  const [search, setSearch] = useState("");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
-  const fetchDocs = async () => { 
+  const [docs, setDocs] = useState<SQPDocument[]>([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [editingDoc, setEditingDoc] = useState<SQPDocument | null>(null);
+  const [editFilename, setEditFilename] = useState("");
+
+  const fetchDocs = async () => {
+    setLoading(true);
     try {
-      const r = await api.get(`/employee/sqp?search=${search}`); 
-      setDocs(r.data); 
-    } catch {}
+      const r = await api.get(`/documents/sqp?search=${encodeURIComponent(search)}`);
+      setDocs(r.data);
+    } catch {
+      setDocs([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchDocs(); }, []);
 
-  const handleDownload = (id: number) => { 
-    window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank"); 
+  const filteredDocs = useMemo(() => docs, [docs]);
+
+  const handleDownload = (id: number) => {
+    window.open(`http://localhost:8000/documents/${id}/download`, "_blank");
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      await api.post("/documents/sqp", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setSelectedFile(null);
+      await fetchDocs();
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openEdit = (doc: SQPDocument) => {
+    setEditingDoc(doc);
+    setEditFilename(doc.filename);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingDoc) return;
+    await api.put(`/documents/sqp/${editingDoc.id}`, { filename: editFilename });
+    setEditingDoc(null);
+    await fetchDocs();
+  };
+
+  const handleDelete = async (docId: number) => {
+    if (!window.confirm("Xóa tài liệu SQP này?")) return;
+    await api.delete(`/documents/sqp/${docId}`);
+    await fetchDocs();
   };
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Quy Định & Biểu Mẫu Công Ty (SQP)</h1>
-          <p className="text-gray-500 text-sm mt-1">Tra cứu các tài liệu dùng chung đã được phê duyệt</p>
+          <p className="text-gray-500 text-sm mt-1">
+            {isAdmin ? "Quản lý CRUD tài liệu SQP" : "Tra cứu các tài liệu dùng chung đã được phê duyệt"}
+          </p>
         </div>
+        <button
+          onClick={() => void fetchDocs()}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border rounded-lg shadow-sm hover:border-blue-300 text-sm text-gray-700"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          Làm mới
+        </button>
       </div>
+
+      {isAdmin && (
+        <div className="bg-white border rounded-xl shadow-sm p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <Upload className="w-5 h-5 text-blue-600" />
+            <h2 className="font-semibold text-gray-900">Tải lên tài liệu SQP</h2>
+          </div>
+          <div className="flex flex-wrap gap-3 items-center">
+            <label className="flex-1 min-w-64 border rounded-lg px-3 py-2.5 text-sm bg-gray-50 cursor-pointer flex items-center justify-between gap-3">
+              <span className="truncate text-gray-600">{selectedFile ? selectedFile.name : "Chọn file..."}</span>
+              <span className="text-xs text-blue-600 font-medium whitespace-nowrap">Browse</span>
+              <input type="file" className="hidden" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+            </label>
+            <button
+              onClick={() => void handleUpload()}
+              disabled={!selectedFile || uploading}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
+            >
+              <Upload className="w-4 h-4" />
+              {uploading ? "Đang tải lên..." : "Tải lên"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="relative">
         <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
@@ -49,7 +137,7 @@ export default function SQPBrowser() {
             </tr>
           </thead>
           <tbody>
-            {docs.map((d: any) => (
+            {filteredDocs.map((d) => (
               <tr key={d.id} className="border-b hover:bg-gray-50 transition">
                 <td className="px-4 py-4 font-medium flex items-center gap-3">
                   <div className="p-2 bg-amber-50 rounded-lg"><BookOpen className="w-5 h-5 text-amber-600" /></div>
@@ -57,9 +145,21 @@ export default function SQPBrowser() {
                 </td>
                 <td className="px-4 py-4 text-gray-500">{d.uploaded_at?.slice(0, 10)}</td>
                 <td className="px-4 py-4 text-right">
-                  <button onClick={() => handleDownload(d.id)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100 ml-auto font-medium">
-                    <Download className="w-3.5 h-3.5" /> Tải về
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => handleDownload(d.id)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100 font-medium">
+                      <Download className="w-3.5 h-3.5" /> Tải về
+                    </button>
+                    {isAdmin && (
+                      <>
+                        <button onClick={() => openEdit(d)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-xs hover:bg-emerald-100 font-medium">
+                          <PencilLine className="w-3.5 h-3.5" /> Sửa
+                        </button>
+                        <button onClick={() => void handleDelete(d.id)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50" title="Xóa">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -72,6 +172,36 @@ export default function SQPBrowser() {
           </div>
         )}
       </div>
+
+      {editingDoc && isAdmin && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-lg text-gray-900">Chỉnh sửa tài liệu SQP</h3>
+                <p className="text-sm text-gray-500">Đổi tên file SQP.</p>
+              </div>
+              <button onClick={() => setEditingDoc(null)} className="p-2 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <input
+              value={editFilename}
+              onChange={(event) => setEditFilename(event.target.value)}
+              className="w-full border rounded-lg px-3 py-2.5 text-sm"
+              placeholder="Tên file"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEditingDoc(null)} className="px-4 py-2.5 rounded-lg border text-sm text-gray-600">
+                Hủy
+              </button>
+              <button onClick={() => void handleSaveEdit()} className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700">
+                Lưu thay đổi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

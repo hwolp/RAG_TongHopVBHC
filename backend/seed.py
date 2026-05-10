@@ -11,13 +11,14 @@ def seed_data():
         db.close()
         return
 
+    d0 = models.Department(id=0, name="Admin")
     d1 = models.Department(name="Hành Chính Nhân Sự")
     d2 = models.Department(name="Kế Toán")
     d3 = models.Department(name="Công Nghệ Thông Tin")
-    db.add_all([d1, d2, d3])
+    db.add_all([d0, d1, d2, d3])
     db.commit()
 
-    admin = models.User(username="admin", hashed_password=get_password_hash("admin123"), full_name="Quản trị viên", role="admin", department_id=d1.id)
+    admin = models.User(username="admin", hashed_password=get_password_hash("admin123"), full_name="Quản trị viên", role="admin", department_id=d0.id)
     manager = models.User(username="tp_nhansu", hashed_password=get_password_hash("manager123"), full_name="Trưởng phòng NS", role="manager", department_id=d1.id)
     employee = models.User(username="nv_ketoan", hashed_password=get_password_hash("nv123"), full_name="Nhân viên KT", role="employee", department_id=d2.id)
     
