@@ -8,6 +8,7 @@ export default function AdminSystem() {
   const [proposals, setProposals] = useState<any[]>([]);
   const [tags, setTags] = useState<any[]>([]);
   const [newTag, setNewTag] = useState("");
+  const [jobMessage, setJobMessage] = useState("");
 
   const fetchStatus = async () => { try { const r = await api.get("/admin/vector/status"); setVectorStatus(r.data); } catch {} };
   const fetchProposals = async () => { const r = await api.get("/admin/sqp/proposals"); setProposals(r.data); };
@@ -16,8 +17,48 @@ export default function AdminSystem() {
   useEffect(() => { fetchStatus(); fetchProposals(); fetchTags(); }, []);
 
   const handleReindex = async () => { setLoading(true); await api.post("/admin/vector/reindex"); await fetchStatus(); setLoading(false); };
-  const handleClear = async () => { if (confirm("XÓA TOÀN BỘ Vector DB?")) { await api.post("/admin/vector/clear"); await fetchStatus(); } };
-  const handleApprove = async (id: number) => { await api.post(`/admin/sqp/approve/${id}`); fetchProposals(); };
+  const handleClear = async () => {
+    const ok = confirm(
+      "XÓA COLLECTION sẽ xóa toàn bộ vector index, tài liệu đã upload, hội thoại, tin nhắn chat và job nền. Thao tác này không thể hoàn tác. Tiếp tục?"
+    );
+    if (!ok) return;
+    setLoading(true);
+    try {
+      await api.post("/admin/vector/clear");
+      await fetchStatus();
+      await fetchProposals();
+    } finally {
+      setLoading(false);
+    }
+  };
+  const pollIndexJob = async (jobId: number) => {
+    setJobMessage("Tài liệu SQP đã được duyệt, đang chờ re-index...");
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get(`/jobs/${jobId}`);
+        if (r.data.status === "running") setJobMessage("Worker đang re-index tài liệu SQP...");
+        if (r.data.status === "success") {
+          setJobMessage("Re-index tài liệu SQP hoàn tất.");
+          await fetchStatus();
+          return;
+        }
+        if (r.data.status === "failed") {
+          setJobMessage("Re-index thất bại: " + (r.data.error || "Không rõ lỗi."));
+          return;
+        }
+      } catch {
+        setJobMessage("Không thể kiểm tra trạng thái job index.");
+        return;
+      }
+    }
+    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
+  };
+  const handleApprove = async (id: number) => {
+    const r = await api.post(`/admin/sqp/approve/${id}`);
+    await fetchProposals();
+    if (r.data.job_id) void pollIndexJob(r.data.job_id);
+  };
   const handleReject = async (id: number) => { await api.post(`/admin/sqp/reject/${id}`); fetchProposals(); };
   const handleAddTag = async () => { if (!newTag) return; await api.post(`/admin/tags?name=${newTag}`); setNewTag(""); fetchTags(); };
   const handleDeleteTag = async (id: number) => { await api.delete(`/admin/tags/${id}`); fetchTags(); };
@@ -39,11 +80,18 @@ export default function AdminSystem() {
           <div className="flex items-center gap-3 mb-2"><RefreshCw className={`w-5 h-5 text-amber-600 ${loading ? "animate-spin" : ""}`} /><h3 className="font-semibold">Re-index</h3></div>
           <p className="text-sm text-gray-500">{loading ? "Đang quét lại..." : "Quét lại toàn bộ tài liệu chưa index"}</p>
         </button>
-        <button onClick={handleClear} className="bg-white rounded-xl border p-6 shadow-sm hover:border-red-300 transition text-left">
+        <button onClick={handleClear} disabled={loading} className="bg-white rounded-xl border p-6 shadow-sm hover:border-red-300 transition text-left disabled:opacity-60">
           <div className="flex items-center gap-3 mb-2"><Trash2 className="w-5 h-5 text-red-600" /><h3 className="font-semibold text-red-600">Xóa Collection</h3></div>
-          <p className="text-sm text-gray-500">Xóa toàn bộ dữ liệu Vector (Bảo trì)</p>
+          <p className="text-sm text-gray-500">Xóa vector, hội thoại, tin nhắn, tài liệu upload và file lưu trữ</p>
         </button>
       </div>
+
+      {/* Tags */}
+      {jobMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          {jobMessage}
+        </div>
+      )}
 
       {/* Tags */}
       <div className="bg-white rounded-xl border shadow-sm p-6">

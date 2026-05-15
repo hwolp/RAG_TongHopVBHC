@@ -77,6 +77,9 @@ class Document(Base):
     scope = Column(Enum(ScopeEnum), default=ScopeEnum.personal)
     summary = Column(Text, nullable=True)
     is_indexed = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    version_number = Column(Integer, default=1)
 
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
@@ -88,6 +91,20 @@ class Document(Base):
     chat_session = relationship("ChatSession", back_populates="documents")
     proposals = relationship("SQPProposal", back_populates="document")
     shared_records = relationship("SharedDocument", back_populates="document")
+    versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"))
+    filename = Column(String(255))
+    file_path = Column(String(500))
+    version_number = Column(Integer, default=1)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    document = relationship("Document", back_populates="versions")
 
 
 # ========== SQP PROPOSAL ==========
@@ -148,6 +165,34 @@ class SavedPrompt(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="saved_prompts")
+
+
+class ConfigItem(Base):
+    __tablename__ = "config_items"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, index=True, nullable=False)
+    value = Column(Text, nullable=False)
+    type = Column(String(50), default="metadata")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+# ========== BACKGROUND JOBS ==========
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String(50), index=True, nullable=False)
+    status = Column(String(20), index=True, default="queued")
+    progress = Column(Integer, default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+    session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True)
+    message_id = Column(Integer, ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True)
+    payload = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
 
 
 # ========== SHARING & CONTRIBUTOR ==========

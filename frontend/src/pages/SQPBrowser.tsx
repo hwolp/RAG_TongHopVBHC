@@ -8,6 +8,14 @@ type SQPDocument = {
   filename: string;
   uploaded_at: string;
   owner_id?: number | null;
+  is_indexed?: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+};
+
+type JobResponse = {
+  id: number;
+  status: "queued" | "running" | "success" | "failed";
+  error?: string | null;
 };
 
 export default function SQPBrowser() {
@@ -21,6 +29,7 @@ export default function SQPBrowser() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [editingDoc, setEditingDoc] = useState<SQPDocument | null>(null);
   const [editFilename, setEditFilename] = useState("");
+  const [jobMessage, setJobMessage] = useState("");
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -34,6 +43,7 @@ export default function SQPBrowser() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDocs(); }, []);
 
   const filteredDocs = useMemo(() => docs, [docs]);
@@ -42,18 +52,70 @@ export default function SQPBrowser() {
     window.open(`http://localhost:8000/documents/${id}/download`, "_blank");
   };
 
+  const pollIndexJob = async (jobId: number) => {
+    setJobMessage("Tài liệu SQP đã tải lên, đang chờ worker index...");
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+        if (r.data.status === "running") {
+          setJobMessage("Worker đang index tài liệu SQP...");
+        }
+        if (r.data.status === "success") {
+          setJobMessage("Index tài liệu SQP hoàn tất.");
+          await fetchDocs();
+          return;
+        }
+        if (r.data.status === "failed") {
+          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
+          await fetchDocs();
+          return;
+        }
+      } catch {
+        setJobMessage("Không thể kiểm tra trạng thái job index.");
+        return;
+      }
+    }
+    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) return;
     setUploading(true);
+    setJobMessage("");
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      await api.post("/documents/sqp", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      const response = await api.post("/documents/sqp", formData, { headers: { "Content-Type": "multipart/form-data" } });
       setSelectedFile(null);
       await fetchDocs();
+      if (response.data.job_id) {
+        void pollIndexJob(response.data.job_id);
+      } else {
+        setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
+      }
     } finally {
       setUploading(false);
     }
+  };
+
+  const renderIndexBadge = (doc: SQPDocument) => {
+    const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
+    const styles: Record<string, string> = {
+      indexed: "bg-green-100 text-green-700",
+      queued: "bg-amber-100 text-amber-700",
+      running: "bg-blue-100 text-blue-700",
+      failed: "bg-red-100 text-red-700",
+      not_indexed: "bg-gray-100 text-gray-500",
+    };
+    const labels: Record<string, string> = {
+      indexed: "Đã index",
+      queued: "Chờ index",
+      running: "Đang index",
+      failed: "Index lỗi",
+      not_indexed: "Chưa index",
+    };
+    return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>{labels[status] || labels.not_indexed}</span>;
   };
 
   const openEdit = (doc: SQPDocument) => {
@@ -116,6 +178,12 @@ export default function SQPBrowser() {
         </div>
       )}
 
+      {jobMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          {jobMessage}
+        </div>
+      )}
+
       <div className="relative">
         <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
         <input 
@@ -132,6 +200,7 @@ export default function SQPBrowser() {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Tên tài liệu</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-600">Index</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày ban hành (Upload)</th>
               <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
             </tr>
@@ -143,6 +212,7 @@ export default function SQPBrowser() {
                   <div className="p-2 bg-amber-50 rounded-lg"><BookOpen className="w-5 h-5 text-amber-600" /></div>
                   <span className="text-gray-900">{d.filename}</span>
                 </td>
+                <td className="px-4 py-4">{renderIndexBadge(d)}</td>
                 <td className="px-4 py-4 text-gray-500">{d.uploaded_at?.slice(0, 10)}</td>
                 <td className="px-4 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">

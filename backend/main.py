@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import models
 from database.db_config import engine
 from database.schema_sync import sync_schema
-from routers import admin, auth, chat, documents, manager, tags, users
+from routers import admin, auth, chat, documents, jobs, manager, tags, users
+from services.job_runner import start_internal_worker
 
 models.Base.metadata.create_all(bind=engine)
 sync_schema(engine)
@@ -14,6 +15,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(jobs.router)
 app.include_router(tags.router)
 app.include_router(manager.router)
 app.include_router(admin.router)
@@ -25,6 +27,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def start_background_jobs():
+    start_internal_worker()
+
 
 @app.get("/")
 def root():

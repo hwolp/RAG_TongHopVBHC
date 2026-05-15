@@ -21,6 +21,7 @@ export type FolderDoc = {
   filename: string;
   scope: string;
   is_indexed: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
   uploaded_at: string;
   owner_id?: number;
   department_id?: number;
@@ -70,14 +71,26 @@ function FileIcon({ filename }: { filename: string }) {
     : <File className={`w-4 h-4 flex-shrink-0 ${colorClass}`} />;
 }
 
-function IndexBadge({ indexed }: { indexed: boolean }) {
-  return indexed ? (
-    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
-      <BadgeCheck className="w-3 h-3" /> Đã index
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-gray-50 text-gray-400 border border-gray-200">
-      <Clock className="w-3 h-3" /> Chưa index
+function IndexBadge({ doc }: { doc: FolderDoc }) {
+  const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
+  const styles: Record<string, string> = {
+    indexed: "bg-emerald-50 text-emerald-600 border-emerald-200",
+    queued: "bg-amber-50 text-amber-600 border-amber-200",
+    running: "bg-blue-50 text-blue-600 border-blue-200",
+    failed: "bg-red-50 text-red-600 border-red-200",
+    not_indexed: "bg-gray-50 text-gray-400 border-gray-200",
+  };
+  const labels: Record<string, string> = {
+    indexed: "Đã index",
+    queued: "Chờ index",
+    running: "Đang index",
+    failed: "Index lỗi",
+    not_indexed: "Chưa index",
+  };
+  const Icon = status === "indexed" ? BadgeCheck : Clock;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${styles[status] || styles.not_indexed}`}>
+      <Icon className="w-3 h-3" /> {labels[status] || labels.not_indexed}
     </span>
   );
 }
@@ -128,7 +141,7 @@ function DocRow({
         <p className="text-[10px] text-gray-400">{doc.uploaded_at.slice(0, 10)}</p>
       </div>
 
-      <IndexBadge indexed={doc.is_indexed} />
+      <IndexBadge doc={doc} />
 
       {attached && (
         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 flex-shrink-0">

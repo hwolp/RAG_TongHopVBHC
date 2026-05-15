@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database.db_config import get_db
 from database import models
 from middleware.auth_middleware import require_manager, require_manager_only
-from services import share_service, sqp_service
+from services import job_service, share_service, sqp_service
 
 router = APIRouter(prefix="/manager", tags=["Trưởng phòng"])
 
@@ -67,7 +67,7 @@ def remove_contributor(contrib_id: int, db: Session = Depends(get_db), user: dic
 
 @router.post("/department/documents/{doc_id}/index")
 def index_department_document(doc_id: int, db: Session = Depends(get_db), user: dict = Depends(require_manager_only)):
-    """Kích hoạt index RAG cho tài liệu phòng ban chưa được index."""
+    """Kích hoạt index RAG nền cho tài liệu phòng ban chưa được index."""
     manager_user = db.query(models.User).filter(models.User.id == user["id"]).first()
     doc = db.query(models.Document).filter(
         models.Document.id == doc_id,
@@ -80,15 +80,15 @@ def index_department_document(doc_id: int, db: Session = Depends(get_db), user: 
     if doc.is_indexed:
         return {"status": "already_indexed", "doc_id": doc_id}
 
-    try:
-        from rag_engine.chroma_manager import ChromaDBManager
-        mgr = ChromaDBManager()
-        chunks = mgr.process_and_store_pdf(
-            doc.file_path, doc.id, doc.owner_id,
-            manager_user.department_id, "department", ""
-        )
-        doc.is_indexed = True
-        db.commit()
-        return {"status": "indexed", "doc_id": doc_id, "chunks": chunks}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Lỗi index: {str(exc)}")
+    running_job = db.query(models.BackgroundJob).filter(
+        models.BackgroundJob.document_id == doc.id,
+        models.BackgroundJob.type == job_service.JOB_TYPE_INDEX_DOCUMENT,
+        models.BackgroundJob.status.in_([job_service.STATUS_QUEUED, job_service.STATUS_RUNNING]),
+    ).order_by(models.BackgroundJob.created_at.desc()).first()
+    if running_job:
+        return {"status": running_job.status, "doc_id": doc_id, "job_id": running_job.id}
+
+    job = job_service.create_index_job(db, doc, user["id"])
+    if not job:
+        raise HTTPException(status_code=400, detail="Định dạng file chưa hỗ trợ index")
+    return {"status": "queued", "doc_id": doc_id, "job_id": job.id}

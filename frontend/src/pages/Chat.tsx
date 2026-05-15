@@ -13,6 +13,9 @@ type ChatMessage = {
   content: string;
   sources?: string;
   created_at?: string;
+  job_id?: number;
+  job_status?: JobResponse["status"];
+  job_progress?: number;
 };
 
 type MessagePage = {
@@ -26,6 +29,19 @@ type AttachedDoc = {
   filename: string;
   scope: string;
   is_indexed: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+};
+
+type JobResponse = {
+  id: number;
+  status: "queued" | "running" | "success" | "failed";
+  progress: number;
+  result?: {
+    answer?: string;
+    sources?: string[];
+    message_id?: number;
+  } | null;
+  error?: string | null;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -59,6 +75,7 @@ export default function Chat() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollingJobsRef = useRef<Set<number>>(new Set());
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -100,6 +117,11 @@ export default function Chat() {
       setMessages(page.items || []);
       setHasMoreMessages(Boolean(page.has_more));
       setNextBeforeId(page.next_before_id ?? null);
+      (page.items || []).forEach(message => {
+        if (message.sender === "ai" && message.job_id && message.job_status !== "success" && message.job_status !== "failed") {
+          void pollChatJob(message.job_id, message.id, id);
+        }
+      });
       requestAnimationFrame(scrollToBottom);
     } catch { setMessages([]); }
     fetchAttachments(id);
@@ -131,42 +153,143 @@ export default function Chat() {
     if (el.scrollTop <= 80) loadOlderMessages();
   };
 
+  const pollChatJob = async (jobId: number, aiMessageId: number, sessionId: number) => {
+    if (pollingJobsRef.current.has(jobId)) return;
+    pollingJobsRef.current.add(jobId);
+    let lastStatus: JobResponse["status"] = "queued";
+    let lastProgress = 0;
+    let transientErrors = 0;
+    const maxAttempts = 240;
+    try {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const delay = attempt < 20 ? 1500 : attempt < 80 ? 3000 : 5000;
+        await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 300 : delay));
+        try {
+          const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+          const job = r.data;
+          lastStatus = job.status;
+          lastProgress = job.progress || 0;
+          transientErrors = 0;
+          if (job.status === "success") {
+            setMessages(prev => prev.map(message => (
+              message.id === aiMessageId
+                ? {
+                    ...message,
+                    content: job.result?.answer || "Đã xử lý xong nhưng không có nội dung trả lời.",
+                    sources: JSON.stringify(job.result?.sources || []),
+                  }
+                : message
+            )));
+            await fetchSessionDocs(sessionId);
+            await fetchSessions();
+            requestAnimationFrame(scrollToBottom);
+            return;
+          }
+          if (job.status === "failed") {
+            setMessages(prev => prev.map(message => (
+              message.id === aiMessageId
+                ? { ...message, content: `⚠️ Xử lý AI thất bại.\n\n${job.error || "Không rõ lỗi."}` }
+                : message
+            )));
+            return;
+          }
+          if (attempt === 0 || attempt % 4 === 0) {
+            const statusText = job.status === "running"
+              ? `AI đang xử lý câu trả lời... (${job.progress || 0}%)`
+              : "Câu hỏi đang chờ worker xử lý...";
+            setMessages(prev => prev.map(message => (
+              message.id === aiMessageId && message.content.startsWith("⏳")
+                ? { ...message, content: `⏳ ${statusText}` }
+                : message
+            )));
+          }
+        } catch (err: any) {
+          transientErrors += 1;
+          if (transientErrors >= 5) {
+            setMessages(prev => prev.map(message => (
+              message.id === aiMessageId
+                ? { ...message, content: "⚠️ Không thể kiểm tra trạng thái job: " + (err.response?.data?.detail || err.message) }
+                : message
+            )));
+            return;
+          }
+        }
+      }
+
+      const timeoutMessage = lastStatus === "running"
+        ? `⏳ AI vẫn đang xử lý (${lastProgress}%). Vui lòng tải lại phiên sau ít phút nếu câu trả lời chưa hiện.`
+        : "⏳ Job vẫn đang chờ xử lý nền. Vui lòng kiểm tra backend hoặc tải lại phiên sau ít phút.";
+      setMessages(prev => prev.map(message => (
+        message.id === aiMessageId
+          ? { ...message, content: timeoutMessage }
+          : message
+      )));
+    } finally {
+      pollingJobsRef.current.delete(jobId);
+    }
+  };
+
+  const pollIndexJob = async (jobId: number, sessionId: number) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+        if (r.data.status === "success" || r.data.status === "failed") {
+          await fetchSessionDocs(sessionId);
+          await fetchAttachments(sessionId);
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+  };
+
   // ── Send Chat ───────────────────────────────────────────────────────────────
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     const question = input;
+    const tempUserMessageId = Date.now();
     setInput("");
-    setMessages(prev => [...prev, { sender: "user", content: question, id: Date.now() }]);
+    setMessages(prev => [...prev, { sender: "user", content: question, id: tempUserMessageId }]);
     setLoading(true);
     try {
       const r = await api.post("/employee/chat", {
         question, scope,
         session_id: activeSession,
       });
-      setMessages(prev => [...prev, {
-        sender: "ai",
-        content: r.data.answer,
-        sources: JSON.stringify(r.data.sources),
-        id: Date.now() + 1,
-      }]);
+      const sessionId = r.data.session_id;
+      const aiMessageId = r.data.ai_message_id;
+      setMessages(prev => [
+        ...prev.map(message => (
+          message.id === tempUserMessageId ? { ...message, id: r.data.user_message_id } : message
+        )),
+        {
+          sender: "ai",
+          content: "⏳ Đã nhận câu hỏi. AI đang tra cứu tài liệu và tạo câu trả lời...",
+          sources: "[]",
+          id: aiMessageId,
+        },
+      ]);
       requestAnimationFrame(scrollToBottom);
-      if (!activeSession && r.data.session_id) {
-        setActiveSession(r.data.session_id);
-        fetchAttachments(r.data.session_id);
-        fetchSessionDocs(r.data.session_id);
-      } else if (activeSession) {
-        // Refresh file lists to keep in sync
-        fetchSessionDocs(activeSession);
+      if (!activeSession && sessionId) {
+        setActiveSession(sessionId);
+        fetchAttachments(sessionId);
+        fetchSessionDocs(sessionId);
       }
       fetchSessions();
+      setLoading(false);
+      if (r.data.job_id) {
+        void pollChatJob(r.data.job_id, aiMessageId, sessionId);
+      }
     } catch (err: any) {
       setMessages(prev => [...prev, {
         sender: "ai",
         content: "⚠️ Lỗi kết nối AI.\n\n" + (err.response?.data?.detail || err.message),
         id: Date.now() + 1,
       }]);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // ── Upload file mới vào session ─────────────────────────────────────────────
@@ -182,18 +305,21 @@ export default function Chat() {
     formData.append("file", file);
     setUploading(true);
     try {
-      await api.post(
+      const r = await api.post(
         `/employee/sessions/${activeSession}/documents/upload`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
       setMessages(prev => [...prev, {
         id: Date.now(), sender: "ai",
-        content: `✅ Đã tải file **"${file.name}"** vào session.`,
+        content: r.data.job_id
+          ? `✅ Đã tải file **"${file.name}"** vào session. Tài liệu đang chờ index nền.`
+          : `✅ Đã tải file **"${file.name}"** vào session.`,
       }]);
       // Fetch updated session documents
       if (activeSession) {
         await fetchSessionDocs(activeSession);
+        if (r.data.job_id) void pollIndexJob(r.data.job_id, activeSession);
       }
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
@@ -234,13 +360,16 @@ export default function Chat() {
   const handleAttach = async (doc: FolderDoc) => {
     if (!activeSession) return;
     try {
-      await api.post(`/chat/sessions/${activeSession}/attach`, { doc_id: doc.id });
+      const r = await api.post(`/chat/sessions/${activeSession}/attach`, { doc_id: doc.id });
       // Refetch attachments to ensure data is in sync
       await fetchAttachments(activeSession);
       setMessages(prev => [...prev, {
         id: Date.now(), sender: "ai",
-        content: `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nAI sẽ dùng nội dung tài liệu này khi trả lời câu hỏi.`,
+        content: r.data.index_job_id
+          ? `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nTài liệu đang được index, AI sẽ dùng được nội dung sau khi trạng thái chuyển sang Đã index.`
+          : `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nAI sẽ dùng nội dung tài liệu này khi trả lời câu hỏi.`,
       }]);
+      if (r.data.index_job_id) void pollIndexJob(r.data.index_job_id, activeSession);
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
       alert("Lỗi đính kèm: " + (err.response?.data?.detail || err.message));
@@ -308,6 +437,17 @@ export default function Chat() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   const attachedIds = new Set(attachedDocs.map(a => a.doc_id));
+  const sessionDocStatusLabel = (doc: any) => {
+    const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
+    const labels: Record<string, string> = {
+      indexed: "Đã index",
+      queued: "Chờ index",
+      running: "Đang index",
+      failed: "Index lỗi",
+      not_indexed: "Chưa index",
+    };
+    return labels[status] || labels.not_indexed;
+  };
 
   return (
     <div className="flex h-full">
@@ -414,6 +554,9 @@ export default function Chat() {
             {attachedDocs.map(a => (
               <span key={a.doc_id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-emerald-300 rounded-full text-emerald-700 shadow-sm">
                 {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
+                <span className="text-[10px] text-emerald-400 border-l border-emerald-100 pl-1">
+                  {sessionDocStatusLabel(a)}
+                </span>
                 <button onClick={() => handleDetach(a.doc_id)} className="text-emerald-400 hover:text-red-500 ml-0.5">
                   <X className="w-3 h-3" />
                 </button>
@@ -429,6 +572,9 @@ export default function Chat() {
             {sessionDocs.map((d: any) => (
               <span key={d.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-blue-300 rounded-full text-blue-700 shadow-sm">
                 {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
+                <span className="text-[10px] text-blue-400 border-l border-blue-100 pl-1">
+                  {sessionDocStatusLabel(d)}
+                </span>
                 <button 
                   onClick={async () => {
                     if (!activeSession) return;

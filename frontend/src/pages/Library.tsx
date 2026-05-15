@@ -11,7 +11,14 @@ type Doc = {
   filename: string;
   scope: string;
   is_indexed: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
   uploaded_at: string;
+};
+
+type JobResponse = {
+  id: number;
+  status: "queued" | "running" | "success" | "failed";
+  error?: string | null;
 };
 
 export default function Library() {
@@ -21,6 +28,7 @@ export default function Library() {
   const [viewMode, setViewMode] = useState<"grid" | "tree">("grid");
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
+  const [jobMessage, setJobMessage] = useState("");
 
   const fetchDocs = async () => {
     try {
@@ -38,6 +46,7 @@ export default function Library() {
     setTreeLoading(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDocs(); }, []);
 
   const switchToTree = () => {
@@ -45,16 +54,75 @@ export default function Library() {
     fetchTree();
   };
 
+  const pollIndexJob = async (jobId: number) => {
+    setJobMessage("Tài liệu đã tải lên, đang chờ worker index...");
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+        if (r.data.status === "running") {
+          setJobMessage("Worker đang index tài liệu...");
+        }
+        if (r.data.status === "success") {
+          setJobMessage("Index tài liệu hoàn tất.");
+          await fetchDocs();
+          if (viewMode === "tree") await fetchTree();
+          return;
+        }
+        if (r.data.status === "failed") {
+          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
+          await fetchDocs();
+          return;
+        }
+      } catch {
+        setJobMessage("Không thể kiểm tra trạng thái job index.");
+        return;
+      }
+    }
+    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra Redis/RQ worker.");
+  };
+
+  const indexBadge = (doc: Doc) => {
+    const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
+    const styles: Record<string, string> = {
+      indexed: "bg-green-100 text-green-700",
+      queued: "bg-amber-100 text-amber-700",
+      running: "bg-blue-100 text-blue-700",
+      failed: "bg-red-100 text-red-700",
+      not_indexed: "bg-gray-100 text-gray-500",
+    };
+    const labels: Record<string, string> = {
+      indexed: "Đã index",
+      queued: "Chờ index",
+      running: "Đang index",
+      failed: "Index lỗi",
+      not_indexed: "Chưa index",
+    };
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>
+        {labels[status] || labels.not_indexed}
+      </span>
+    );
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
+    setJobMessage("");
     setUploading(true);
     const fd = new FormData();
     fd.append("file", e.target.files[0]);
     try {
-      await api.post("/employee/documents/upload", fd);
-      fetchDocs();
+      const r = await api.post("/employee/documents/upload", fd);
+      await fetchDocs();
       if (viewMode === "tree") fetchTree();
-    } catch {}
+      if (r.data.job_id) {
+        void pollIndexJob(r.data.job_id);
+      } else {
+        setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
+      }
+    } catch (err: any) {
+      setJobMessage("Tải lên thất bại: " + (err.response?.data?.detail || err.message));
+    }
     setUploading(false);
   };
 
@@ -102,6 +170,13 @@ export default function Library() {
       </div>
 
       {/* Search (grid mode only) */}
+      {jobMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          {jobMessage}
+        </div>
+      )}
+
+      {/* Search (grid mode only) */}
       {viewMode === "grid" && (
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -131,9 +206,7 @@ export default function Library() {
                   <div className="p-2 bg-blue-50 rounded-lg">
                     <FileText className="w-6 h-6 text-blue-600" />
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${d.is_indexed ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                    {d.is_indexed ? "Đã index" : "Chưa index"}
-                  </span>
+                  {indexBadge(d)}
                 </div>
                 <h3 className="font-medium text-gray-900 truncate mb-1" title={d.filename}>{d.filename}</h3>
                 <p className="text-xs text-gray-400 mb-4">{d.uploaded_at?.slice(0, 10)}</p>

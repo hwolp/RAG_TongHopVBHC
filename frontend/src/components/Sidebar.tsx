@@ -23,7 +23,7 @@ export default function Sidebar() {
         <Link to="/library" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/library')}`}><FileText className="w-4 h-4" />Kho Cá Nhân</Link>
         <Link to="/sqp" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/sqp')}`}><BookOpen className="w-4 h-4" />Quy Định (SQP)</Link>
 
-        {(user?.role === 'manager' || user?.role === 'admin') && (<>
+        {user?.role === 'manager' && (<>
           <p className="text-[10px] font-bold text-slate-500 tracking-widest mb-2 px-3 uppercase mt-6">Phòng ban</p>
           <Link to="/manager/docs" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/manager/docs')}`}><FolderKanban className="w-4 h-4" />Thư Mục Chung</Link>
         </>)}

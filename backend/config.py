@@ -26,11 +26,16 @@ MYSQL_URL = _require_env("MYSQL_URL")
 # === Ollama Config ===
 OLLAMA_BASE_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct-q4_K_M")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "600"))
 
 # === ChromaDB Config ===
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_DIR", "./database/chromadb_storage")
 EMBEDDING_MODEL_BASE_URL = os.getenv("EMBEDDING_MODEL_BASE_URL", "sentence-transformers")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+# === Background Jobs ===
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+RQ_QUEUE_NAME = os.getenv("RQ_QUEUE_NAME", "rag_jobs")
 
 # === Upload Directories ===
 UPLOAD_DIR_PERSONAL = os.getenv("UPLOAD_DIR_PERSONAL", "uploads/personal")

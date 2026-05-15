@@ -49,6 +49,15 @@ def sync_schema(engine: Engine) -> None:
             except Exception:
                 pass
 
+        if not _column_exists(engine, "documents", "is_deleted"):
+            conn.execute(text("ALTER TABLE documents ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"))
+
+        if not _column_exists(engine, "documents", "deleted_at"):
+            conn.execute(text("ALTER TABLE documents ADD COLUMN deleted_at DATETIME NULL"))
+
+        if not _column_exists(engine, "documents", "version_number"):
+            conn.execute(text("ALTER TABLE documents ADD COLUMN version_number INT NOT NULL DEFAULT 1"))
+
         if not _column_exists(engine, "shared_documents", "shared_with_user_id"):
             conn.execute(text("ALTER TABLE shared_documents ADD COLUMN shared_with_user_id INT NULL"))
             try:
@@ -73,5 +82,57 @@ def sync_schema(engine: Engine) -> None:
                     attached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
                     FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+            """))
+
+        inspector = inspect(engine)
+        if "document_versions" not in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE document_versions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    document_id INT NOT NULL,
+                    filename VARCHAR(255),
+                    file_path VARCHAR(500),
+                    version_number INT NOT NULL DEFAULT 1,
+                    uploaded_by INT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+                    FOREIGN KEY (uploaded_by) REFERENCES users(id)
+                )
+            """))
+
+        if "config_items" not in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE config_items (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    `key` VARCHAR(100) NOT NULL UNIQUE,
+                    value TEXT NOT NULL,
+                    type VARCHAR(50) DEFAULT 'metadata',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+        inspector = inspect(engine)
+        if "background_jobs" not in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE background_jobs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    type VARCHAR(50) NOT NULL,
+                    status VARCHAR(20) DEFAULT 'queued',
+                    progress INT DEFAULT 0,
+                    created_by INT NULL,
+                    document_id INT NULL,
+                    session_id INT NULL,
+                    message_id INT NULL,
+                    payload TEXT NULL,
+                    result TEXT NULL,
+                    error TEXT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    finished_at DATETIME NULL,
+                    FOREIGN KEY (created_by) REFERENCES users(id),
+                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE SET NULL,
+                    FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE SET NULL
                 )
             """))

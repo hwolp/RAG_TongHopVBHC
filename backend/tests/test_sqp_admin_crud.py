@@ -15,7 +15,7 @@ from database import models
 from database.db_config import Base, get_db
 from middleware.auth_middleware import get_current_user, require_admin, require_manager, require_manager_only
 from routers import documents, manager
-from services import document_service
+from services import document_service, job_worker
 
 
 def _build_test_app(db_session: Session, current_user: dict) -> FastAPI:
@@ -75,9 +75,17 @@ def _client_and_db():
     return client, db
 
 
-def test_admin_can_crud_sqp_documents(tmp_path):
+def test_admin_can_crud_sqp_documents(tmp_path, monkeypatch):
     client, db = _client_and_db()
     document_service.UPLOAD_DIR_SQP = str(tmp_path / "sqp")
+
+    class DummyChromaDBManager:
+        def process_and_store_pdf(self, *args, **kwargs):
+            return 7
+
+    import rag_engine.chroma_manager as chroma_manager_module
+
+    monkeypatch.setattr(chroma_manager_module, "ChromaDBManager", DummyChromaDBManager)
 
     upload_response = client.post(
         "/documents/sqp",
@@ -86,9 +94,22 @@ def test_admin_can_crud_sqp_documents(tmp_path):
     assert upload_response.status_code == 200
     doc_id = upload_response.json()["doc_id"]
 
+    upload_payload = upload_response.json()
+    assert upload_payload["status"] == "queued"
+    assert upload_payload["job_id"] is not None
+
+    stored_doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+    assert stored_doc is not None
+    assert stored_doc.is_indexed is False
+
+    job_worker.run_job(upload_payload["job_id"], db)
+    db.refresh(stored_doc)
+    assert stored_doc.is_indexed is True
+
     listed = client.get("/documents/sqp")
     assert listed.status_code == 200
     assert any(item["id"] == doc_id for item in listed.json())
+    assert any(item["id"] == doc_id and item["is_indexed"] is True for item in listed.json())
 
     updated = client.put(f"/documents/sqp/{doc_id}", json={"filename": "sqp-policy-updated.pdf"})
     assert updated.status_code == 200

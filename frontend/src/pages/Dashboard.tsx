@@ -8,6 +8,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ docs: 0, sessions: 0, users: 0, vectors: 0 });
 
   useEffect(() => {
+    if (!user) return;
+
     const load = async () => {
       try {
         const [docsR, sessionsR] = await Promise.all([
@@ -16,14 +18,22 @@ export default function Dashboard() {
         ]);
         let usersCount = 0, vectorCount = 0;
         if (user?.role === "admin") {
-          try { const u = await api.get("/admin/users"); usersCount = u.data.length; } catch {}
+          try {
+            const u = await api.get("/admin/users");
+            usersCount = Array.isArray(u.data) ? u.data.length : 0;
+          } catch {}
           try { const v = await api.get("/admin/vector/status"); vectorCount = v.data.total_vectors; } catch {}
         }
-        setStats({ docs: docsR.data.length, sessions: sessionsR.data.length, users: usersCount, vectors: vectorCount });
+        setStats({
+          docs: Array.isArray(docsR.data) ? docsR.data.length : 0,
+          sessions: Array.isArray(sessionsR.data) ? sessionsR.data.length : 0,
+          users: usersCount,
+          vectors: vectorCount,
+        });
       } catch {}
     };
     load();
-  }, []);
+  }, [user]);
 
   const cards = [
     { title: "Tài liệu của tôi", value: stats.docs, icon: <FileText className="w-6 h-6" />, color: "text-blue-600", bg: "bg-blue-50 border-blue-100" },

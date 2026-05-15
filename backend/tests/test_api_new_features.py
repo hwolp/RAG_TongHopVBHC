@@ -15,7 +15,7 @@ from database import models
 from database.db_config import Base, get_db
 from middleware.auth_middleware import get_current_user, require_admin, require_manager
 from routers import admin, chat, documents
-from services import chat_service, document_service
+from services import document_service, job_worker, maintenance_service
 
 
 def _build_test_app(db_session: Session, current_user: dict) -> FastAPI:
@@ -152,6 +152,52 @@ def test_admin_config_crud():
     assert deleted.status_code == 200
 
 
+def test_admin_clear_collection_removes_rag_data(tmp_path, monkeypatch):
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 1, "role": "admin", "sub": "admin"})
+
+    personal_root = tmp_path / "uploads" / "personal"
+    department_root = tmp_path / "uploads" / "department"
+    sqp_root = tmp_path / "uploads" / "sqp"
+    personal_root.mkdir(parents=True)
+    department_root.mkdir(parents=True)
+    sqp_root.mkdir(parents=True)
+    uploaded_file = personal_root / "personal.pdf"
+    uploaded_file.write_bytes(b"pdf")
+
+    doc = db.query(models.Document).filter(models.Document.id == 10).first()
+    doc.file_path = str(uploaded_file)
+    doc.is_indexed = True
+    db.add(models.DocumentVersion(document_id=10, filename="personal-v1.pdf", file_path=str(uploaded_file)))
+    db.add(models.SessionDocAttachment(session_id=20, doc_id=10))
+    db.add(models.BackgroundJob(type="chat_answer", status="success", created_by=3, document_id=10, session_id=20, message_id=30))
+    db.commit()
+
+    class DummyChromaDBManager:
+        def admin_clear_db(self):
+            return "Cleaned"
+
+    import rag_engine.chroma_manager as chroma_manager_module
+
+    monkeypatch.setattr(chroma_manager_module, "ChromaDBManager", DummyChromaDBManager)
+    monkeypatch.setattr(maintenance_service, "UPLOAD_DIR_PERSONAL", str(personal_root))
+    monkeypatch.setattr(maintenance_service, "UPLOAD_DIR_DEPARTMENT", str(department_root))
+    monkeypatch.setattr(maintenance_service, "UPLOAD_DIR_SQP", str(sqp_root))
+
+    response = client.post("/admin/vector/clear")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["deleted"]["documents"] >= 3
+    assert payload["deleted"]["chat_sessions"] >= 1
+    assert payload["deleted"]["chat_messages"] >= 1
+    assert db.query(models.Document).count() == 0
+    assert db.query(models.ChatSession).count() == 0
+    assert db.query(models.ChatMessage).count() == 0
+    assert db.query(models.BackgroundJob).count() == 0
+    assert not uploaded_file.exists()
+
+
 def test_admin_can_list_all_department_documents():
     client, db, _ = _client_and_db()
 
@@ -159,6 +205,64 @@ def test_admin_can_list_all_department_documents():
     assert response.status_code == 200
     document_ids = {item["id"] for item in response.json()}
     assert {11, 12}.issubset(document_ids)
+
+    tree_response = client.get("/documents/tree")
+    assert tree_response.status_code == 200
+    tree = tree_response.json()
+    assert "IT" in tree["department"]
+    assert "Kế Toán" in tree["department"]
+
+    db.close()
+
+
+def test_admin_approve_sqp_requeues_index_with_sqp_scope(monkeypatch):
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 1, "role": "admin", "sub": "admin"})
+
+    doc = db.query(models.Document).filter(models.Document.id == 11).first()
+    doc.is_indexed = True
+    proposal = models.SQPProposal(
+        document_id=11,
+        proposed_by=2,
+        status=models.ProposalStatus.pending,
+    )
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+
+    deleted_doc_ids = []
+
+    class DummyChromaDBManager:
+        def delete_doc_from_index(self, doc_id: int):
+            deleted_doc_ids.append(doc_id)
+            return 3
+
+    import rag_engine.chroma_manager as chroma_manager_module
+
+    monkeypatch.setattr(chroma_manager_module, "ChromaDBManager", DummyChromaDBManager)
+
+    response = client.post(f"/admin/sqp/approve/{proposal.id}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_id"] is not None
+
+    db.refresh(doc)
+    assert doc.scope == models.ScopeEnum.sqp
+    assert doc.is_indexed is False
+    assert deleted_doc_ids == [11]
+    job = db.query(models.BackgroundJob).filter(models.BackgroundJob.id == payload["job_id"]).first()
+    assert job is not None
+    assert job.type == "index_document"
+
+
+def test_admin_library_tree_shows_all_departments_even_when_assigned_to_one_dept():
+    client, db, current_user = _client_and_db()
+
+    admin_user = db.query(models.User).filter(models.User.id == 1).first()
+    admin_user.department_id = 1
+    db.commit()
+
+    current_user.update({"id": 1, "role": "admin", "sub": "admin"})
 
     tree_response = client.get("/documents/tree")
     assert tree_response.status_code == 200
@@ -203,6 +307,44 @@ def test_document_trash_restore_and_version_flow(tmp_path):
     assert all(item["id"] != 10 for item in trash_after.json())
 
 
+def test_personal_upload_uses_user_scoped_unique_paths(tmp_path, monkeypatch):
+    client, db, current_user = _client_and_db()
+    monkeypatch.setattr(document_service, "UPLOAD_DIR_PERSONAL", str(tmp_path / "personal"))
+
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+    first_upload = client.post(
+        "/documents/personal",
+        files={"file": ("same.txt", io.BytesIO(b"employee file"), "text/plain")},
+    )
+    assert first_upload.status_code == 200
+    first_doc_id = first_upload.json()["doc_id"]
+
+    current_user.update({"id": 2, "role": "manager", "sub": "manager"})
+    second_upload = client.post(
+        "/documents/personal",
+        files={"file": ("same.txt", io.BytesIO(b"manager file"), "text/plain")},
+    )
+    assert second_upload.status_code == 200
+    second_doc_id = second_upload.json()["doc_id"]
+
+    first_doc = db.query(models.Document).filter(models.Document.id == first_doc_id).first()
+    second_doc = db.query(models.Document).filter(models.Document.id == second_doc_id).first()
+    assert first_doc.filename == "same.txt"
+    assert second_doc.filename == "same.txt"
+    assert first_doc.file_path != second_doc.file_path
+    assert os.path.basename(os.path.dirname(first_doc.file_path)) == "user_3"
+    assert os.path.basename(os.path.dirname(second_doc.file_path)) == "user_2"
+    assert open(first_doc.file_path, "rb").read() == b"employee file"
+    assert open(second_doc.file_path, "rb").read() == b"manager file"
+
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+    listed = client.get("/documents/personal")
+    assert listed.status_code == 200
+    listed_ids = {item["id"] for item in listed.json()}
+    assert first_doc_id in listed_ids
+    assert second_doc_id not in listed_ids
+
+
 def test_chat_citation_and_execute_prompt(monkeypatch):
     client, _, current_user = _client_and_db()
     current_user.update({"id": 3, "role": "employee", "sub": "employee"})
@@ -211,10 +353,62 @@ def test_chat_citation_and_execute_prompt(monkeypatch):
     assert citation.status_code == 200
     assert citation.json()["sources"] == ["10", "11"]
 
-    def _fake_ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", session_id: int | None = None):
-        return {"answer": f"echo:{question}", "sources": [], "session_id": 20, "session_title": "s1", "attached_docs": 0}
-
-    monkeypatch.setattr(chat_service, "ask_ai", _fake_ask_ai)
     executed = client.post("/chat/prompts/40/execute", json={"scope": "personal", "session_id": 20})
     assert executed.status_code == 200
-    assert executed.json()["answer"] == "echo:saved question"
+    payload = executed.json()
+    assert payload["status"] == "queued"
+    assert payload["job_id"] is not None
+    assert payload["session_id"] == 20
+    assert payload["ai_message_id"] is not None
+
+
+def test_chat_answer_worker_updates_placeholder(monkeypatch):
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+
+    class DummyChromaDBManager:
+        def search_context_with_filter(self, *args, **kwargs):
+            return "context", ["10"]
+
+    class DummyOllamaAI:
+        def generate_answer(self, question: str, context: str, chat_history: str):
+            return f"echo:{question}:{context}"
+
+    import rag_engine.chroma_manager as chroma_manager_module
+    import rag_engine.ollama_ai as ollama_ai_module
+
+    monkeypatch.setattr(chroma_manager_module, "ChromaDBManager", DummyChromaDBManager)
+    monkeypatch.setattr(ollama_ai_module, "OllamaAI", DummyOllamaAI)
+
+    executed = client.post("/chat/prompts/40/execute", json={"scope": "personal", "session_id": 20})
+    job_id = executed.json()["job_id"]
+    ai_message_id = executed.json()["ai_message_id"]
+
+    job_worker.run_job(job_id, db)
+
+    ai_message = db.query(models.ChatMessage).filter(models.ChatMessage.id == ai_message_id).first()
+    assert ai_message.content == "echo:saved question:context"
+    assert ai_message.sources == '["10"]'
+
+
+def test_chat_answer_waits_for_unindexed_attachment():
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+
+    attached = client.post("/chat/sessions/20/attach", json={"doc_id": 10})
+    assert attached.status_code == 200
+    assert attached.json()["index_status"] == "queued"
+
+    listed = client.get("/chat/sessions/20/attachments")
+    assert listed.status_code == 200
+    assert listed.json()[0]["index_status"] == "queued"
+
+    executed = client.post("/chat/prompts/40/execute", json={"scope": "personal", "session_id": 20})
+    job_id = executed.json()["job_id"]
+    ai_message_id = executed.json()["ai_message_id"]
+
+    job_worker.run_job(job_id, db)
+
+    ai_message = db.query(models.ChatMessage).filter(models.ChatMessage.id == ai_message_id).first()
+    assert "chưa index xong" in ai_message.content
+    assert ai_message.sources == "[]"

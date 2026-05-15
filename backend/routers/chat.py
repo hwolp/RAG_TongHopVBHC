@@ -18,6 +18,11 @@ class SavePromptRequest(BaseModel):
     content: str
 
 
+class ExecutePromptRequest(BaseModel):
+    scope: str = "personal"
+    session_id: int | None = None
+
+
 class AttachDocRequest(BaseModel):
     doc_id: int
 
@@ -28,7 +33,7 @@ class CreateSessionRequest(BaseModel):
 
 @router.post("/chat/ask")
 def ask_ai(payload: ChatRequest, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return chat_service.ask_ai(
+    return chat_service.queue_ai_answer(
         db=db,
         user_id=user["id"],
         question=payload.question,
@@ -164,6 +169,21 @@ def create_prompt(payload: SavePromptRequest, db: Session = Depends(get_db), use
 @router.delete("/chat/prompts/{prompt_id}")
 def delete_prompt(prompt_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return chat_service.delete_saved_prompt(db, user["id"], prompt_id)
+
+
+@router.post("/chat/prompts/{prompt_id}/execute")
+def execute_prompt(
+    prompt_id: int,
+    payload: ExecutePromptRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return chat_service.execute_saved_prompt(db, user["id"], prompt_id, payload.scope, payload.session_id)
+
+
+@router.get("/chat/citations/{message_id}")
+def message_citations(message_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return chat_service.get_message_citations(db, user["id"], message_id)
 
 
 # Legacy compatibility endpoints

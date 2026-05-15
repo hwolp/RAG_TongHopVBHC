@@ -2,9 +2,7 @@ import re
 from typing import Optional
 import io
 import logging
-import cv2
 import fitz
-import numpy as np
 
 try:
     import pytesseract
@@ -101,6 +99,14 @@ _ADMIN_SEPARATORS = [
 # Separator thông thường
 _NORMAL_SEPARATORS = ["\n\n", "\n", ".", " "]
 
+_SUMMARY_QUERY_PATTERNS = [
+    r"\bt[oó]m\s+t[aắ]t\b",
+    r"\bn[oộ]i\s+dung\s+ch[ií]nh\b",
+    r"\b[yý]\s+ch[ií]nh\b",
+    r"\bkh[aá]i\s+qu[aá]t\b",
+    r"\bt[oà]ng\s+quan\b",
+]
+
 
 def _is_page_scanned(page_text: str, min_text_ratio: float = 0.1) -> bool:
     """
@@ -160,6 +166,10 @@ def _is_administrative_text(full_text: str) -> bool:
     """Phát hiện văn bản hành chính dựa trên regex patterns."""
     matches = sum(1 for p in _ADMIN_DOC_PATTERNS if re.search(p, full_text, re.IGNORECASE))
     return matches >= 2  # Cần ít nhất 2 pattern khớp để chắc chắn
+
+
+def _is_summary_query(query: str) -> bool:
+    return any(re.search(pattern, query or "", re.IGNORECASE) for pattern in _SUMMARY_QUERY_PATTERNS)
 
 
 def _split_administrative(pages: list[LCDocument]) -> list[LCDocument]:
@@ -410,10 +420,14 @@ class ChromaDBManager:
         # Tìm thêm từ doc_ids đính kèm (nếu có)
         if extra_doc_ids:
             attached_docs = []
+            summary_query = _is_summary_query(query)
             for doc_id in extra_doc_ids:
                 try:
+                    if summary_query:
+                        attached_docs.extend(self.get_doc_context_chunks(doc_id, limit=12))
+                        continue
                     results = self.vectordb.similarity_search(
-                        query, k=2, filter={"doc_id": doc_id}
+                        query, k=4, filter={"doc_id": doc_id}
                     )
                     attached_docs.extend(results)
                 except Exception:
@@ -428,6 +442,25 @@ class ChromaDBManager:
         text_content = "\n\n".join([doc.page_content for doc in docs])
         sources = list(set([str(doc.metadata.get("doc_id", "N/A")) for doc in docs]))
         return text_content, sources
+
+    def get_doc_context_chunks(self, doc_id: int, limit: int = 12) -> list[LCDocument]:
+        """Lấy trực tiếp các chunk đầu của một tài liệu, phù hợp cho câu hỏi tóm tắt/nội dung chính."""
+        try:
+            collection = self.vectordb._collection
+            results = collection.get(
+                where={"doc_id": doc_id},
+                include=["documents", "metadatas"],
+                limit=limit,
+            )
+            documents = results.get("documents", []) or []
+            metadatas = results.get("metadatas", []) or []
+            return [
+                LCDocument(page_content=content, metadata=metadatas[index] or {})
+                for index, content in enumerate(documents)
+                if content
+            ]
+        except Exception:
+            return []
 
     def get_doc_ids_for_collection(self) -> list[int]:
         """Trả về tất cả doc_id đã được index trong ChromaDB."""

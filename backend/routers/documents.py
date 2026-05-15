@@ -103,6 +103,36 @@ def sqp_document_detail(doc_id: int, db: Session = Depends(get_db), _: dict = De
     return document_service.get_sqp_document_detail(db, doc_id)
 
 
+@router.get("/documents/trash")
+def list_trash(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.list_deleted_documents(db, user["id"])
+
+
+@router.get("/documents/{doc_id}")
+def document_detail(doc_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.get_document_detail(db, user["id"], doc_id)
+
+
+@router.post("/documents/{doc_id}/versions")
+async def upload_document_version(
+    doc_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return await document_service.upload_document_version(db, user["id"], doc_id, file)
+
+
+@router.get("/documents/{doc_id}/versions")
+def list_document_versions(doc_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.list_document_versions(db, user["id"], doc_id)
+
+
+@router.post("/documents/{doc_id}/restore")
+def restore_document(doc_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    return document_service.restore_document(db, user["id"], doc_id)
+
+
 # Legacy compatibility endpoints
 @router.get("/employee/documents")
 def legacy_list_my_documents(search: str = "", db: Session = Depends(get_db), user: dict = Depends(get_current_user)):

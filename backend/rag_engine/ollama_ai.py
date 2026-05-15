@@ -1,10 +1,14 @@
 from langchain_community.llms import Ollama
 from langchain_core.prompts import PromptTemplate
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
 
 class OllamaAI:
     def __init__(self, model_name=None):
-        self.llm = Ollama(model=model_name or OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+        self.llm = Ollama(
+            model=model_name or OLLAMA_MODEL,
+            base_url=OLLAMA_BASE_URL,
+            timeout=OLLAMA_TIMEOUT_SECONDS,
+        )
 
     def generate_answer(self, question: str, context: str, chat_history: str = ""):
         """Sinh câu trả lời có kèm lịch sử hội thoại gần nhất để AI không bị quên."""

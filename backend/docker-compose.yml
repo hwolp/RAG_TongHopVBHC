@@ -23,6 +23,13 @@ services:
     restart: always
     # Để cài model tự động, vào CLI của docker: docker exec -it local_ollama ollama run qwen:0.5b
 
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
 volumes:
   mysql_data:
   ollama_data:

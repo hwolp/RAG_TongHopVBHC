@@ -13,6 +13,14 @@ type DepartmentDocument = {
   uploaded_at: string;
   owner_id: number | null;
   department_id: number | null;
+  is_indexed?: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+};
+
+type JobResponse = {
+  id: number;
+  status: "queued" | "running" | "success" | "failed";
+  error?: string | null;
 };
 
 type ShareRecord = {
@@ -46,6 +54,7 @@ export default function AdminDocuments() {
   const [editingDoc, setEditingDoc] = useState<DepartmentDocument | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ filename: "", department_id: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [jobMessage, setJobMessage] = useState("");
 
   const departmentNameMap = useMemo(
     () => new Map(departments.map((department) => [department.id, department.name])),
@@ -81,6 +90,7 @@ export default function AdminDocuments() {
 
   useEffect(() => {
     void refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSearch = async () => {
@@ -92,20 +102,72 @@ export default function AdminDocuments() {
     }
   };
 
+  const pollIndexJob = async (jobId: number) => {
+    setJobMessage("Tài liệu đã tải lên, đang chờ worker index...");
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+        if (r.data.status === "running") {
+          setJobMessage("Worker đang index tài liệu phòng ban...");
+        }
+        if (r.data.status === "success") {
+          setJobMessage("Index tài liệu phòng ban hoàn tất.");
+          await refreshAll();
+          return;
+        }
+        if (r.data.status === "failed") {
+          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
+          await refreshAll();
+          return;
+        }
+      } catch {
+        setJobMessage("Không thể kiểm tra trạng thái job index.");
+        return;
+      }
+    }
+    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
+  };
+
   const handleUpload = async () => {
     if (!selectedFile || !selectedDepartmentId) return;
     setUploading(true);
+    setJobMessage("");
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      await api.post("/admin/documents/department/upload", formData, {
+      const response = await api.post("/admin/documents/department/upload", formData, {
         params: { department_id: Number(selectedDepartmentId) },
       });
       setSelectedFile(null);
       await refreshAll();
+      if (response.data.job_id) {
+        void pollIndexJob(response.data.job_id);
+      } else {
+        setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
+      }
     } finally {
       setUploading(false);
     }
+  };
+
+  const renderIndexBadge = (document: DepartmentDocument) => {
+    const status = document.index_status || (document.is_indexed ? "indexed" : "not_indexed");
+    const styles: Record<string, string> = {
+      indexed: "bg-green-100 text-green-700",
+      queued: "bg-amber-100 text-amber-700",
+      running: "bg-blue-100 text-blue-700",
+      failed: "bg-red-100 text-red-700",
+      not_indexed: "bg-gray-100 text-gray-500",
+    };
+    const labels: Record<string, string> = {
+      indexed: "Đã index",
+      queued: "Chờ index",
+      running: "Đang index",
+      failed: "Index lỗi",
+      not_indexed: "Chưa index",
+    };
+    return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>{labels[status] || labels.not_indexed}</span>;
   };
 
   const openEditModal = (doc: DepartmentDocument) => {
@@ -210,6 +272,12 @@ export default function AdminDocuments() {
         </div>
       </div>
 
+      {jobMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          {jobMessage}
+        </div>
+      )}
+
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b">
           <div>
@@ -240,6 +308,7 @@ export default function AdminDocuments() {
             <tr>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Tài liệu</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Phòng ban</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-600">Index</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày tải</th>
               <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
             </tr>
@@ -258,6 +327,7 @@ export default function AdminDocuments() {
                 <td className="px-4 py-3 text-gray-600">
                   {document.department_id ? departmentNameMap.get(document.department_id) ?? `#${document.department_id}` : "—"}
                 </td>
+                <td className="px-4 py-3">{renderIndexBadge(document)}</td>
                 <td className="px-4 py-3 text-gray-500">{document.uploaded_at?.slice(0, 10)}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-1">

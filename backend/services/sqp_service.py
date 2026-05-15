@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from database import models
+from services import job_service
 
 
 def _status_str(status_value) -> str:
@@ -78,11 +79,27 @@ def approve_proposal(db: Session, proposal_id: int):
 
     proposal.status = models.ProposalStatus.approved
     doc = db.query(models.Document).filter(models.Document.id == proposal.document_id).first()
+    job = None
     if doc:
-        doc.scope = models.ScopeEnum.sqp
+        if doc.is_indexed:
+            try:
+                from rag_engine.chroma_manager import ChromaDBManager
 
-    db.commit()
-    return {"status": "success", "message": "Da duyet thanh SQP"}
+                ChromaDBManager().delete_doc_from_index(doc.id)
+            except Exception:
+                pass
+        doc.scope = models.ScopeEnum.sqp
+        doc.is_indexed = False
+        db.commit()
+        job = job_service.create_index_job(db, doc, proposal.proposed_by, force_admin_chunking=True)
+    else:
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "Da duyet thanh SQP",
+        "job_id": job.id if job else None,
+    }
 
 
 def reject_proposal(db: Session, proposal_id: int):

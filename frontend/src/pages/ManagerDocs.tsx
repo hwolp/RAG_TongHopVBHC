@@ -30,12 +30,19 @@ type Doc = {
   uploaded_at: string;
   owner_id: number;
   is_indexed?: boolean;
+  index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
 };
 
 type Proposal = {
   id: number;
   document_id: number;
   status: string;
+};
+
+type JobResponse = {
+  id: number;
+  status: "queued" | "running" | "success" | "failed";
+  error?: string | null;
 };
 
 export default function ManagerDocs() {
@@ -54,6 +61,7 @@ export default function ManagerDocs() {
   const [shareTargetUsername, setShareTargetUsername] = useState("");
   const [shareMode, setShareMode] = useState<"department" | "user">("department");
   const [sharing, setSharing] = useState(false);
+  const [jobMessage, setJobMessage] = useState("");
 
   const refreshShares = async () => {
     try {
@@ -100,6 +108,7 @@ export default function ManagerDocs() {
     fetchProposals();
     fetchDepartments();
     refreshShares();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const switchToTree = () => {
@@ -107,15 +116,49 @@ export default function ManagerDocs() {
     fetchTree();
   };
 
+  const pollIndexJob = async (jobId: number) => {
+    setJobMessage("Tài liệu đã được đưa vào hàng đợi index...");
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try {
+        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
+        if (r.data.status === "running") {
+          setJobMessage("Worker đang index tài liệu phòng ban...");
+        }
+        if (r.data.status === "success") {
+          setJobMessage("Index tài liệu phòng ban hoàn tất.");
+          await fetchDocs();
+          if (viewMode === "tree") await fetchTree();
+          return;
+        }
+        if (r.data.status === "failed") {
+          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
+          await fetchDocs();
+          return;
+        }
+      } catch {
+        setJobMessage("Không thể kiểm tra trạng thái job index.");
+        return;
+      }
+    }
+    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
+  };
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     setUploading(true);
+    setJobMessage("");
     const fd = new FormData();
     fd.append("file", e.target.files[0]);
     try {
-      await api.post("/manager/department/documents/upload", fd);
-      fetchDocs();
+      const r = await api.post("/manager/department/documents/upload", fd);
+      await fetchDocs();
       if (viewMode === "tree") fetchTree();
+      if (r.data.job_id) {
+        void pollIndexJob(r.data.job_id);
+      } else {
+        setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
+      }
     } catch {}
     setUploading(false);
   };
@@ -146,10 +189,16 @@ export default function ManagerDocs() {
   // Index (trigger RAG indexing) cho tài liệu phòng ban
   const handleIndex = async (docId: number) => {
     setIndexingId(docId);
+    setJobMessage("");
     try {
-      await api.post(`/manager/department/documents/${docId}/index`);
-      fetchDocs();
+      const r = await api.post(`/manager/department/documents/${docId}/index`);
+      await fetchDocs();
       if (viewMode === "tree") fetchTree();
+      if (r.data.job_id) {
+        void pollIndexJob(r.data.job_id);
+      } else {
+        setJobMessage(r.data.status === "already_indexed" ? "Tài liệu đã được index trước đó." : "Đã gửi yêu cầu index.");
+      }
     } catch (err: any) {
       alert("Lỗi index: " + (err.response?.data?.detail || err.message));
     }
@@ -187,6 +236,25 @@ export default function ManagerDocs() {
   };
 
   const proposedDocIds = new Set(proposals.map(p => p.document_id));
+
+  const renderIndexBadge = (doc: Doc) => {
+    const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
+    const styles: Record<string, string> = {
+      indexed: "bg-green-100 text-green-700",
+      queued: "bg-amber-100 text-amber-700",
+      running: "bg-blue-100 text-blue-700",
+      failed: "bg-red-100 text-red-700",
+      not_indexed: "bg-gray-100 text-gray-500",
+    };
+    const labels: Record<string, string> = {
+      indexed: "Đã index",
+      queued: "Chờ index",
+      running: "Đang index",
+      failed: "Index lỗi",
+      not_indexed: "Chưa index",
+    };
+    return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>{labels[status] || labels.not_indexed}</span>;
+  };
 
   // Tree attach handler used as "propose" in FolderTree context
   const handleTreePropose = (doc: FolderDoc) => handlePropose(doc.id);
@@ -339,6 +407,13 @@ export default function ManagerDocs() {
       </div>
 
       {/* Search + refresh (table mode) */}
+      {jobMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          {jobMessage}
+        </div>
+      )}
+
+      {/* Search + refresh (table mode) */}
       {viewMode === "table" && (
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -380,9 +455,7 @@ export default function ManagerDocs() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${d.is_indexed ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                      {d.is_indexed ? "Đã index" : "Chưa index"}
-                    </span>
+                    {renderIndexBadge(d)}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{d.uploaded_at?.slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">

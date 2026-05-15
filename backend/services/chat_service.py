@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from database import models
 from services.access_policy import can_access_document
+from services import job_service
 
 
 def ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", session_id: Optional[int] = None):
@@ -84,6 +85,65 @@ def ask_ai(db: Session, user_id: int, question: str, scope: str = "personal", se
     }
 
 
+def queue_ai_answer(db: Session, user_id: int, question: str, scope: str = "personal", session_id: Optional[int] = None):
+    user_model = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user_model:
+        raise HTTPException(status_code=404, detail="Khong tim thay nguoi dung")
+
+    normalized_scope = "sqp" if scope == "company" else scope
+    if normalized_scope == "department" and user_model.role == models.RoleEnum.employee:
+        raise HTTPException(status_code=403, detail="Nhan vien chi duoc chat tren tai lieu ca nhan va tai lieu cong ty")
+
+    session = None
+    if session_id:
+        session = db.query(models.ChatSession).filter(
+            models.ChatSession.id == session_id,
+            models.ChatSession.user_id == user_id,
+        ).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Phien khong ton tai")
+
+    if not session:
+        session = models.ChatSession(user_id=user_id, title=question[:50] or "Phiên hội thoại mới")
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    user_message = models.ChatMessage(session_id=session.id, sender="user", content=question)
+    ai_message = models.ChatMessage(
+        session_id=session.id,
+        sender="ai",
+        content="Đang xử lý câu trả lời...",
+        sources="[]",
+    )
+    db.add_all([user_message, ai_message])
+    db.commit()
+    db.refresh(user_message)
+    db.refresh(ai_message)
+
+    job = job_service.create_job(
+        db=db,
+        job_type=job_service.JOB_TYPE_CHAT_ANSWER,
+        created_by=user_id,
+        session_id=session.id,
+        message_id=ai_message.id,
+        payload={
+            "question": question,
+            "scope": scope,
+            "user_message_id": user_message.id,
+        },
+    )
+
+    return {
+        "status": "queued",
+        "job_id": job.id,
+        "session_id": session.id,
+        "session_title": session.title,
+        "user_message_id": user_message.id,
+        "ai_message_id": ai_message.id,
+    }
+
+
 def create_session(db: Session, user_id: int, title: str | None = None):
     """Tạo phiên hội thoại mới với tên mặc định."""
     if not title or not title.strip():
@@ -149,17 +209,39 @@ def get_session_messages_paginated(
     has_more = len(rows) > safe_limit
     selected = rows[:safe_limit]
     selected.reverse()
+    selected_ids = [m.id for m in selected]
+    active_jobs_by_message = {}
+    if selected_ids:
+        active_jobs = db.query(models.BackgroundJob).filter(
+            models.BackgroundJob.message_id.in_(selected_ids),
+            models.BackgroundJob.type == job_service.JOB_TYPE_CHAT_ANSWER,
+            models.BackgroundJob.status.in_([
+                job_service.STATUS_QUEUED,
+                job_service.STATUS_RUNNING,
+            ]),
+        ).order_by(models.BackgroundJob.created_at.desc()).all()
+        for job in active_jobs:
+            active_jobs_by_message.setdefault(job.message_id, job)
 
-    items = [
-        {
+    items = []
+    for m in selected:
+        item = {
             "id": m.id,
             "sender": m.sender,
             "content": m.content,
             "sources": m.sources,
             "created_at": str(m.created_at),
         }
-        for m in selected
-    ]
+        job = active_jobs_by_message.get(m.id)
+        if job:
+            item.update(
+                {
+                    "job_id": job.id,
+                    "job_status": job.status,
+                    "job_progress": job.progress or 0,
+                }
+            )
+        items.append(item)
 
     next_before_id = items[0]["id"] if has_more and items else None
     return {
@@ -219,3 +301,45 @@ def delete_saved_prompt(db: Session, user_id: int, prompt_id: int):
     db.delete(prompt)
     db.commit()
     return {"status": "success"}
+
+
+def get_message_citations(db: Session, user_id: int, message_id: int):
+    message = db.query(models.ChatMessage).join(models.ChatSession).filter(
+        models.ChatMessage.id == message_id,
+        models.ChatSession.user_id == user_id,
+    ).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Tin nhan khong ton tai")
+
+    try:
+        sources = json.loads(message.sources or "[]")
+    except json.JSONDecodeError:
+        sources = []
+
+    return {
+        "message_id": message.id,
+        "sources": [str(source) for source in sources],
+    }
+
+
+def execute_saved_prompt(
+    db: Session,
+    user_id: int,
+    prompt_id: int,
+    scope: str = "personal",
+    session_id: Optional[int] = None,
+):
+    prompt = db.query(models.SavedPrompt).filter(
+        models.SavedPrompt.id == prompt_id,
+        models.SavedPrompt.user_id == user_id,
+    ).first()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    return queue_ai_answer(
+        db=db,
+        user_id=user_id,
+        question=prompt.content,
+        scope=scope,
+        session_id=session_id,
+    )
