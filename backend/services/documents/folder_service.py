@@ -3,27 +3,21 @@ folder_service.py — Cung cấp cấu trúc cây thư mục tài liệu theo sc
 """
 from sqlalchemy.orm import Session
 from database import models
-from services.access_policy import can_access_document
-from services import job_service
+from services.documents.document_service import DocumentIndexCoordinator
+from services.jobs import job_service
+from services.policies.access_policy import can_access_document
+from utils.enum_utils import enum_value
 
 
 def _index_status(db: Session, doc: models.Document) -> str:
-    if doc.is_indexed:
-        return "indexed"
-    job = db.query(models.BackgroundJob).filter(
-        models.BackgroundJob.document_id == doc.id,
-        models.BackgroundJob.type == job_service.JOB_TYPE_INDEX_DOCUMENT,
-    ).order_by(models.BackgroundJob.created_at.desc()).first()
-    if job and job.status in {"queued", "running", "failed"}:
-        return job.status
-    return "not_indexed"
+    return DocumentIndexCoordinator(db).index_status(doc)
 
 
 def _doc_to_dict(db: Session, doc: models.Document) -> dict:
     return {
         "id": doc.id,
         "filename": doc.filename,
-        "scope": doc.scope.value if hasattr(doc.scope, "value") else str(doc.scope),
+        "scope": enum_value(doc.scope),
         "is_indexed": doc.is_indexed,
         "index_status": _index_status(db, doc),
         "uploaded_at": str(doc.uploaded_at),
@@ -230,7 +224,7 @@ def list_session_attachments(db: Session, user_id: int, session_id: int) -> list
             result.append({
                 "doc_id": att.doc_id,
                 "filename": doc.filename,
-                "scope": doc.scope.value if hasattr(doc.scope, "value") else str(doc.scope),
+                "scope": enum_value(doc.scope),
                 "is_indexed": doc.is_indexed,
                 "index_status": _index_status(db, doc),
             })

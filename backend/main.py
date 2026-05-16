@@ -4,7 +4,7 @@ from database import models
 from database.db_config import engine
 from database.schema_sync import sync_schema
 from routers import admin, auth, chat, documents, jobs, manager, tags, users
-from services.job_runner import start_internal_worker
+from services.jobs.runner import start_internal_worker
 
 models.Base.metadata.create_all(bind=engine)
 sync_schema(engine)

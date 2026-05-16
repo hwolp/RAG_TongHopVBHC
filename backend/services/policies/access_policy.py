@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
 
 from database import models
+from utils.enum_utils import enum_value
 
 
 def _scope_str(scope_value) -> str:
-    return scope_value.value if hasattr(scope_value, "value") else str(scope_value)
+    return enum_value(scope_value)
 
 
 def is_document_shared_with_user(db: Session, user: models.User, doc: models.Document) -> bool:

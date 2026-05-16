@@ -47,7 +47,7 @@ def _log_finished_job(job_id: int, future: Future) -> None:
 
 
 def _worker_loop(interval_seconds: float, batch_size: int, worker_count: int) -> None:
-    from services.job_worker import run_job
+    from services.jobs.worker import run_job
 
     in_flight: dict[int, Future] = {}
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="rag-job") as executor:

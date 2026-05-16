@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import models
 from database.db_config import get_db
 from middleware.auth_middleware import require_admin
-from services import config_service, document_service, maintenance_service, share_service, sqp_service
+from services.admin import config_service, maintenance_service
+from services.admin.directory_service import AdminDirectoryService
+from services.admin.vector_service import VectorAdminService
+from services.documents import document_service
+from services.sharing import share_service, sqp_service
 
 router = APIRouter(prefix="/admin", tags=["Quản trị hệ thống"])
 
@@ -40,23 +43,12 @@ class DepartmentRequest(BaseModel):
 
 @router.get("/departments")
 def list_departments(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
-    return [{"id": department.id, "name": department.name} for department in departments]
+    return AdminDirectoryService(db).list_departments()
 
 
 @router.post("/departments")
 def create_department(payload: DepartmentRequest, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Ten phong ban khong hop le")
-    if db.query(models.Department).filter(models.Department.name == name).first():
-        raise HTTPException(status_code=400, detail="Phong ban da ton tai")
-
-    department = models.Department(name=name)
-    db.add(department)
-    db.commit()
-    db.refresh(department)
-    return {"status": "success", "id": department.id, "name": department.name}
+    return AdminDirectoryService(db).create_department(payload.name)
 
 
 @router.put("/departments/{department_id}")
@@ -66,64 +58,22 @@ def update_department(
     db: Session = Depends(get_db),
     _: dict = Depends(require_admin),
 ):
-    department = db.query(models.Department).filter(models.Department.id == department_id).first()
-    if not department:
-        raise HTTPException(status_code=404, detail="Phong ban khong ton tai")
-    if department.id == 0:
-        raise HTTPException(status_code=400, detail="Khong the doi ten phong ban he thong")
-
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Ten phong ban khong hop le")
-    existed = db.query(models.Department).filter(
-        models.Department.name == name,
-        models.Department.id != department_id,
-    ).first()
-    if existed:
-        raise HTTPException(status_code=400, detail="Phong ban da ton tai")
-
-    department.name = name
-    db.commit()
-    return {"status": "success", "id": department.id, "name": department.name}
+    return AdminDirectoryService(db).update_department(department_id, payload.name)
 
 
 @router.delete("/departments/{department_id}")
 def delete_department(department_id: int, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    department = db.query(models.Department).filter(models.Department.id == department_id).first()
-    if not department:
-        raise HTTPException(status_code=404, detail="Phong ban khong ton tai")
-    if department.id == 0:
-        raise HTTPException(status_code=400, detail="Khong the xoa phong ban he thong")
-
-    users_count = db.query(models.User).filter(models.User.department_id == department_id).count()
-    docs_count = db.query(models.Document).filter(models.Document.department_id == department_id).count()
-    if users_count or docs_count:
-        raise HTTPException(
-            status_code=400,
-            detail="Phong ban dang co nguoi dung hoac tai lieu, vui long chuyen du lieu truoc khi xoa",
-        )
-
-    db.delete(department)
-    db.commit()
-    return {"status": "success"}
+    return AdminDirectoryService(db).delete_department(department_id)
 
 
 @router.get("/role-groups")
 def list_role_groups(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    groups = db.query(models.RoleGroup).order_by(models.RoleGroup.name.asc()).all()
-    return [{"id": group.id, "name": group.name, "description": group.description} for group in groups]
+    return AdminDirectoryService(db).list_role_groups()
 
 
 @router.post("/role-groups")
 def create_role_group(payload: RoleGroupRequest, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Ten nhom quyen khong hop le")
-    group = models.RoleGroup(name=name, description=(payload.description or "").strip() or None)
-    db.add(group)
-    db.commit()
-    db.refresh(group)
-    return {"status": "success", "id": group.id, "name": group.name, "description": group.description}
+    return AdminDirectoryService(db).create_role_group(payload.name, payload.description)
 
 
 @router.put("/users/{user_id}/role-group")
@@ -133,16 +83,7 @@ def assign_role_group(
     db: Session = Depends(get_db),
     _: dict = Depends(require_admin),
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Nguoi dung khong ton tai")
-    if payload.role_group_id is not None:
-        role_group = db.query(models.RoleGroup).filter(models.RoleGroup.id == payload.role_group_id).first()
-        if not role_group:
-            raise HTTPException(status_code=404, detail="Nhom quyen khong ton tai")
-    user.role_group_id = payload.role_group_id
-    db.commit()
-    return {"status": "success", "user_id": user.id, "role_group_id": user.role_group_id}
+    return AdminDirectoryService(db).assign_role_group(user_id, payload.role_group_id)
 
 
 @router.get("/configs")
@@ -269,49 +210,12 @@ def revoke_share(
 
 @router.get("/vector/status")
 def vector_status(_: dict = Depends(require_admin)):
-    from config import CHROMA_PERSIST_DIR
-    import chromadb
-
-    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-    total = 0
-    collections = client.list_collections()
-    for collection_ref in collections:
-        collection = (
-            client.get_collection(collection_ref)
-            if isinstance(collection_ref, str)
-            else collection_ref
-        )
-        total += collection.count()
-
-    return {"total_vectors": total, "persist_dir": CHROMA_PERSIST_DIR}
+    return VectorAdminService().status()
 
 
 @router.post("/vector/reindex")
 def reindex_vector(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    from rag_engine.chroma_manager import ChromaDBManager
-
-    manager = ChromaDBManager()
-    manager.admin_clear_db()
-
-    docs = db.query(models.Document).filter(models.Document.is_indexed == False).all()
-    total_chunks = 0
-    for doc in docs:
-        if not doc.file_path.lower().endswith(".pdf"):
-            continue
-
-        chunks = manager.process_and_store_pdf(
-            doc.file_path,
-            doc.id,
-            doc.owner_id or 0,
-            doc.department_id or -1,
-            doc.scope.value if hasattr(doc.scope, "value") else doc.scope,
-            "",
-        )
-        doc.is_indexed = True
-        total_chunks += chunks
-
-    db.commit()
-    return {"status": "success", "reindexed_docs": len(docs), "total_chunks": total_chunks}
+    return VectorAdminService().reindex(db)
 
 
 @router.post("/vector/clear")

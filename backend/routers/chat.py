@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from database.db_config import get_db
 from middleware.auth_middleware import get_current_user
 from schemas.chat_schema import ChatRequest
-from services import chat_service, document_service, folder_service
+from services.chat import chat_service
+from services.documents import document_service, folder_service
 
 router = APIRouter(tags=["Chat AI"])
 

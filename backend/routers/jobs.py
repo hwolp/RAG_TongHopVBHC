@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database.db_config import get_db
 from middleware.auth_middleware import get_current_user
-from services import job_service
+from services.jobs import job_service
 
 
 router = APIRouter(prefix="/jobs", tags=["Background jobs"])

@@ -15,7 +15,8 @@ from database import models
 from database.db_config import Base, get_db
 from middleware.auth_middleware import get_current_user, require_admin, require_manager, require_manager_only
 from routers import documents, manager
-from services import document_service, job_worker
+from services.documents import document_service
+from services.jobs import worker as job_worker
 
 
 def _build_test_app(db_session: Session, current_user: dict) -> FastAPI:

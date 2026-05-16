@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from database.db_config import get_db
 from database import models
 from middleware.auth_middleware import require_manager, require_manager_only
-from services import job_service, share_service, sqp_service
+from services.jobs import job_service
+from services.sharing import share_service, sqp_service
 
 router = APIRouter(prefix="/manager", tags=["Trưởng phòng"])
 

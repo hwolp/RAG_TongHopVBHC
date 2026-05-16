@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from database.db_config import get_db
 from middleware.auth_middleware import get_current_user, require_admin, require_manager
-from services import document_service, folder_service
+from services.documents import document_service, folder_service
 
 
 class UpdateSQPDocumentRequest(BaseModel):

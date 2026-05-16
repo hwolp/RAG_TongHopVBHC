@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database.db_config import get_db
 from schemas.auth_schema import LoginRequest, TokenResponse
-from services.auth_service import authenticate_user, create_access_token
+from services.auth.auth_service import authenticate_user, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["Xác thực"])
 

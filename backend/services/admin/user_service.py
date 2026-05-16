@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import models
-from services.auth_service import get_password_hash
+from services.auth.auth_service import get_password_hash
 
 
 def _role_to_str(role_value) -> str:

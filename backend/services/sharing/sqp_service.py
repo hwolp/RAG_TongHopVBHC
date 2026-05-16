@@ -1,12 +1,13 @@
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from database import models
-from services import job_service
+from services.jobs import job_service
+from utils.enum_utils import enum_value
+from utils.errors import bad_request, not_found
 
 
 def _status_str(status_value) -> str:
-    return status_value.value if hasattr(status_value, "value") else str(status_value)
+    return enum_value(status_value)
 
 
 def list_all_proposals(db: Session):
@@ -42,14 +43,14 @@ def list_manager_proposals(db: Session, manager_user_id: int):
 def propose_document_to_sqp(db: Session, manager_user_id: int, document_id: int):
     doc = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Tai lieu khong ton tai")
+        raise not_found("Tai lieu khong ton tai")
 
     existing = db.query(models.SQPProposal).filter(
         models.SQPProposal.document_id == document_id,
         models.SQPProposal.status == models.ProposalStatus.pending,
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Tai lieu da co de xuat dang cho duyet")
+        raise bad_request("Tai lieu da co de xuat dang cho duyet")
 
     proposal = models.SQPProposal(document_id=document_id, proposed_by=manager_user_id)
     db.add(proposal)
@@ -65,7 +66,7 @@ def cancel_pending_proposal(db: Session, manager_user_id: int, proposal_id: int)
         models.SQPProposal.status == models.ProposalStatus.pending,
     ).first()
     if not proposal:
-        raise HTTPException(status_code=404, detail="De xuat khong ton tai hoac da duoc xu ly")
+        raise not_found("De xuat khong ton tai hoac da duoc xu ly")
 
     db.delete(proposal)
     db.commit()
@@ -75,7 +76,7 @@ def cancel_pending_proposal(db: Session, manager_user_id: int, proposal_id: int)
 def approve_proposal(db: Session, proposal_id: int):
     proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
     if not proposal:
-        raise HTTPException(status_code=404, detail="De xuat khong ton tai")
+        raise not_found("De xuat khong ton tai")
 
     proposal.status = models.ProposalStatus.approved
     doc = db.query(models.Document).filter(models.Document.id == proposal.document_id).first()
@@ -105,7 +106,7 @@ def approve_proposal(db: Session, proposal_id: int):
 def reject_proposal(db: Session, proposal_id: int):
     proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
     if not proposal:
-        raise HTTPException(status_code=404, detail="De xuat khong ton tai")
+        raise not_found("De xuat khong ton tai")
 
     proposal.status = models.ProposalStatus.rejected
     db.commit()

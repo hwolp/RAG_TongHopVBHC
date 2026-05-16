@@ -1,4 +1,3 @@
-import datetime
 import json
 import logging
 from typing import Any
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from config import REDIS_URL, RQ_QUEUE_NAME
 from database import models
+from utils.time_utils import utc_now
 
 
 JOB_TYPE_INDEX_DOCUMENT = "index_document"
@@ -56,7 +56,7 @@ def enqueue_job(job_id: int) -> bool:
         from rq import Queue
 
         queue = Queue(RQ_QUEUE_NAME, connection=Redis.from_url(REDIS_URL))
-        queue.enqueue("services.job_worker.run_job", job_id, job_timeout="30m")
+        queue.enqueue("services.jobs.worker.run_job", job_id, job_timeout="30m")
         return True
     except Exception as exc:
         logging.warning("Could not enqueue background job %s: %s", job_id, exc)
@@ -117,7 +117,7 @@ def mark_running(db: Session, job: models.BackgroundJob, progress: int = 5) -> N
 
 
 def claim_for_run(db: Session, job_id: int) -> models.BackgroundJob | None:
-    now = datetime.datetime.utcnow()
+    now = utc_now()
     claimed = db.query(models.BackgroundJob).filter(
         models.BackgroundJob.id == job_id,
         models.BackgroundJob.status == STATUS_QUEUED,
@@ -138,14 +138,14 @@ def claim_for_run(db: Session, job_id: int) -> models.BackgroundJob | None:
 
 def update_progress(db: Session, job: models.BackgroundJob, progress: int, result: dict | None = None) -> None:
     job.progress = progress
-    job.updated_at = datetime.datetime.utcnow()
+    job.updated_at = utc_now()
     if result is not None:
         job.result = _json_dumps(result)
     db.commit()
 
 
 def mark_success(db: Session, job: models.BackgroundJob, result: dict | None = None) -> None:
-    now = datetime.datetime.utcnow()
+    now = utc_now()
     job.status = STATUS_SUCCESS
     job.progress = 100
     job.error = None
@@ -156,7 +156,7 @@ def mark_success(db: Session, job: models.BackgroundJob, result: dict | None = N
 
 
 def mark_failed(db: Session, job: models.BackgroundJob, error: str) -> None:
-    now = datetime.datetime.utcnow()
+    now = utc_now()
     job.status = STATUS_FAILED
     job.progress = max(job.progress or 0, 100)
     job.error = error

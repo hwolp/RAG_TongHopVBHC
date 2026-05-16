@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum, Boolean
 from sqlalchemy.orm import relationship
 from database.db_config import Base
-import datetime
 import enum
+from utils.time_utils import utc_now
 
 
 # ========== ENUMS ==========
@@ -84,7 +84,7 @@ class Document(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     chat_session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=True)
-    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    uploaded_at = Column(DateTime, default=utc_now)
 
     owner = relationship("User", back_populates="documents")
     department = relationship("Department", back_populates="documents")
@@ -102,7 +102,7 @@ class DocumentVersion(Base):
     file_path = Column(String(500))
     version_number = Column(Integer, default=1)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     document = relationship("Document", back_populates="versions")
 
@@ -114,7 +114,7 @@ class SQPProposal(Base):
     document_id = Column(Integer, ForeignKey("documents.id"))
     proposed_by = Column(Integer, ForeignKey("users.id"))
     status = Column(Enum(ProposalStatus), default=ProposalStatus.pending)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     document = relationship("Document", back_populates="proposals")
     proposer = relationship("User", back_populates="proposals")
@@ -126,7 +126,7 @@ class ChatSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     title = Column(String(255), default="Phiên hội thoại mới")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     user = relationship("User", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -140,7 +140,7 @@ class ChatMessage(Base):
     sender = Column(String(50))  # "user" or "ai"
     content = Column(Text)
     sources = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     session = relationship("ChatSession", back_populates="messages")
 
@@ -151,7 +151,7 @@ class SessionDocAttachment(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"))
     doc_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"))
-    attached_at = Column(DateTime, default=datetime.datetime.utcnow)
+    attached_at = Column(DateTime, default=utc_now)
 
     session = relationship("ChatSession", back_populates="doc_attachments")
 
@@ -162,7 +162,7 @@ class SavedPrompt(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     content = Column(Text)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     user = relationship("User", back_populates="saved_prompts")
 
@@ -173,7 +173,7 @@ class ConfigItem(Base):
     key = Column(String(100), unique=True, index=True, nullable=False)
     value = Column(Text, nullable=False)
     type = Column(String(50), default="metadata")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
 
 # ========== BACKGROUND JOBS ==========
@@ -190,8 +190,8 @@ class BackgroundJob(Base):
     payload = Column(Text, nullable=True)
     result = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
     finished_at = Column(DateTime, nullable=True)
 
 
@@ -203,7 +203,7 @@ class SharedDocument(Base):
     shared_with_dept_id = Column(Integer, ForeignKey("departments.id"))
     shared_with_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     shared_by = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     document = relationship("Document", back_populates="shared_records")
 
@@ -213,4 +213,4 @@ class Contributor(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     granted_by = Column(Integer, ForeignKey("users.id"))
     department_id = Column(Integer, ForeignKey("departments.id"))
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)

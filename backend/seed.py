@@ -1,6 +1,6 @@
 from database.db_config import SessionLocal, engine
 from database import models
-from services.auth_service import get_password_hash
+from services.auth.auth_service import get_password_hash
 
 def seed_data():
     models.Base.metadata.create_all(bind=engine)

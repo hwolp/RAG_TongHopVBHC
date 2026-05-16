@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database.db_config import get_db
 from middleware.auth_middleware import require_admin
 from schemas.user_schema import UserCreate, UserUpdate
-from services import user_service
+from services.admin import user_service
 
 router = APIRouter(prefix="/admin/users", tags=["Quản lý người dùng"])
 

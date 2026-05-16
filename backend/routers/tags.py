@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database.db_config import get_db
 from middleware.auth_middleware import get_current_user, require_admin
-from services import tag_service
+from services.documents import tag_service
 
 router = APIRouter(tags=["Tags"])
 
