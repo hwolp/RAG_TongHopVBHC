@@ -30,9 +30,18 @@ _SUMMARY_QUERY_PATTERNS = [
     r"\bkh[aá]i\s+qu[aá]t\b",
     r"\bt[oà]ng\s+quan\b",
 ]
+_STRUCTURE_QUERY_PATTERNS = [
+    r"\bt[aấ]t\s+c[aả]\s+c[aá]c\s+ch[uư][ơo]ng\b",
+    r"\bli[eệ]t\s+k[eê].*\bch[uư][ơo]ng\b",
+    r"\bdanh\s+s[aá]ch.*\bch[uư][ơo]ng\b",
+    r"\bm[uụ]c\s+l[uụ]c\b",
+    r"\bc[aấ]u\s+tr[uú]c\b",
+]
 _DEFAULT_RETRIEVAL_K = 8
 _ATTACHED_DOC_RETRIEVAL_K = 6
 _SUMMARY_DOC_CONTEXT_LIMIT = 16
+_PARENT_CONTEXT_LIMIT = 8
+_STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
 
 
 def _build_chroma_filter(conditions: dict) -> Optional[dict]:
@@ -47,6 +56,27 @@ def _build_chroma_filter(conditions: dict) -> Optional[dict]:
 
 def _is_summary_query(query: str) -> bool:
     return any(re.search(pattern, query or "", re.IGNORECASE) for pattern in _SUMMARY_QUERY_PATTERNS)
+
+
+def _is_structure_query(query: str) -> bool:
+    return any(re.search(pattern, query or "", re.IGNORECASE) for pattern in _STRUCTURE_QUERY_PATTERNS)
+
+
+def _natural_sort_key(value: str) -> tuple[int, str]:
+    normalized = str(value or "").strip()
+    if normalized.isdigit():
+        return int(normalized), ""
+    roman_values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    total = 0
+    previous = 0
+    for char in reversed(normalized.upper()):
+        current = roman_values.get(char, 0)
+        if current < previous:
+            total -= current
+        else:
+            total += current
+            previous = current
+    return (total or 9999), normalized
 
 
 class ChromaDBManager(VectorStoreInterface):
@@ -117,8 +147,14 @@ class ChromaDBManager(VectorStoreInterface):
         extra_doc_ids: Optional[list[int]] = None,
     ) -> tuple[str, list[str]]:
         scope_filter = self._scope_filter(user_id, user_dept_id, search_scope, session_id)
+        if _is_structure_query(query):
+            structure_context, structure_sources = self._structure_context(scope_filter, extra_doc_ids)
+            if structure_context:
+                return structure_context, structure_sources
+
         docs = self._similarity_search(query, k, scope_filter)
         docs = self._merge_attached_docs(query, docs, extra_doc_ids)
+        docs = self._expand_parent_context(docs)
 
         text_content = "\n\n".join(doc.page_content for doc in docs)
         sources = []
@@ -191,6 +227,133 @@ class ChromaDBManager(VectorStoreInterface):
             existing_content.add(doc.page_content)
         return docs
 
+    def _expand_parent_context(self, docs: list[LCDocument]) -> list[LCDocument]:
+        if not docs:
+            return docs
+
+        existing_content = {doc.page_content for doc in docs}
+        expanded_docs = list(docs)
+        seen_parents = set()
+        for doc in docs:
+            metadata = doc.metadata or {}
+            doc_id = metadata.get("doc_id")
+            parent_id = metadata.get("parent_id")
+            if doc_id is None or not parent_id:
+                continue
+            parent_key = (str(doc_id), str(parent_id))
+            if parent_key in seen_parents:
+                continue
+            seen_parents.add(parent_key)
+
+            for parent_doc in self._get_parent_chunks(doc_id, str(parent_id)):
+                if parent_doc.page_content in existing_content:
+                    continue
+                expanded_docs.append(parent_doc)
+                existing_content.add(parent_doc.page_content)
+
+        return expanded_docs
+
+    def _get_parent_chunks(self, doc_id: int | str, parent_id: str) -> list[LCDocument]:
+        try:
+            collection = self.vectordb._collection
+            results = collection.get(
+                where={"$and": [{"doc_id": int(doc_id)}, {"parent_id": parent_id}]},
+                include=["documents", "metadatas"],
+                limit=_PARENT_CONTEXT_LIMIT,
+            )
+            documents = results.get("documents", []) or []
+            metadatas = results.get("metadatas", []) or []
+            parent_docs = [
+                LCDocument(page_content=content, metadata=metadatas[index] or {})
+                for index, content in enumerate(documents)
+                if content
+            ]
+            return sorted(
+                parent_docs,
+                key=lambda item: (
+                    int(item.metadata.get("parent_index") or 0),
+                    int(item.metadata.get("child_index") or 0),
+                    int(item.metadata.get("chunk_index") or 0),
+                ),
+            )
+        except Exception:
+            return []
+
+    def _structure_context(
+        self,
+        scope_filter: Optional[dict],
+        extra_doc_ids: Optional[list[int]] = None,
+    ) -> tuple[str, list[str]]:
+        metadatas = self._metadata_for_structure(scope_filter)
+        for doc_id in extra_doc_ids or []:
+            metadatas.extend(self._metadata_for_structure({"doc_id": doc_id}))
+
+        structures: dict[str, dict] = {}
+        for meta in metadatas:
+            if not meta or not meta.get("doc_id"):
+                continue
+            doc_id = str(meta.get("doc_id"))
+            doc_structure = structures.setdefault(doc_id, {"chapters": {}, "articles": {}})
+
+            chapter_number = str(meta.get("chapter_number") or "").strip()
+            chapter_title = str(meta.get("chapter_title") or "").strip()
+            if chapter_number:
+                chapter = doc_structure["chapters"].setdefault(
+                    chapter_number,
+                    {"title": chapter_title, "articles": {}},
+                )
+                if chapter_title and not chapter["title"]:
+                    chapter["title"] = chapter_title
+
+            article_number = str(meta.get("article_number") or "").strip()
+            article_title = str(meta.get("article_title") or "").strip()
+            if article_number:
+                article = {"title": article_title, "chapter_number": chapter_number}
+                doc_structure["articles"].setdefault(article_number, article)
+                if article_title and not article["title"]:
+                    article["title"] = article_title
+                if chapter_number:
+                    doc_structure["chapters"][chapter_number]["articles"].setdefault(article_number, article)
+
+        lines = ["Cấu trúc tài liệu được index:"]
+        sources = []
+        for doc_id in sorted(structures, key=_natural_sort_key):
+            structure = structures[doc_id]
+            sources.append(doc_id)
+            lines.append(f"Tài liệu #{doc_id}:")
+            if structure["chapters"]:
+                for chapter_number in sorted(structure["chapters"], key=_natural_sort_key):
+                    chapter = structure["chapters"][chapter_number]
+                    title = f": {chapter['title']}" if chapter["title"] else ""
+                    lines.append(f"- Chương {chapter_number}{title}")
+                    for article_number in sorted(chapter["articles"], key=_natural_sort_key):
+                        article = chapter["articles"][article_number]
+                        article_title = f": {article['title']}" if article["title"] else ""
+                        lines.append(f"  - Điều {article_number}{article_title}")
+            elif structure["articles"]:
+                for article_number in sorted(structure["articles"], key=_natural_sort_key):
+                    article = structure["articles"][article_number]
+                    article_title = f": {article['title']}" if article["title"] else ""
+                    lines.append(f"- Điều {article_number}{article_title}")
+
+        if len(lines) == 1:
+            return "", []
+        return "\n".join(lines), sources
+
+    def _metadata_for_structure(self, where_filter: Optional[dict]) -> list[dict]:
+        try:
+            collection = self.vectordb._collection
+            kwargs = {
+                "include": ["metadatas"],
+                "limit": _STRUCTURE_CONTEXT_METADATA_LIMIT,
+            }
+            if where_filter:
+                kwargs["where"] = where_filter
+            results = collection.get(**kwargs)
+            return results.get("metadatas", []) or []
+        except Exception:
+            return []
+
     def get_doc_context_chunks(self, doc_id: int, limit: int = 12) -> list[LCDocument]:
         """Lấy trực tiếp các chunk đầu của một tài liệu, phù hợp cho câu hỏi tóm tắt/nội dung chính."""
         try:
@@ -202,11 +365,18 @@ class ChromaDBManager(VectorStoreInterface):
             )
             documents = results.get("documents", []) or []
             metadatas = results.get("metadatas", []) or []
-            return [
+            docs = [
                 LCDocument(page_content=content, metadata=metadatas[index] or {})
                 for index, content in enumerate(documents)
                 if content
             ]
+            return sorted(
+                docs,
+                key=lambda item: (
+                    int(item.metadata.get("chunk_index") or 0),
+                    int(item.metadata.get("child_index") or 0),
+                ),
+            )
         except Exception:
             return []
 

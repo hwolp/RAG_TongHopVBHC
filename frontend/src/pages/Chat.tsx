@@ -568,7 +568,7 @@ export default function Chat() {
                 <Bot className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium">Trợ lý AI Hành Chính</p>
                 <p className="text-sm mt-1">Đặt câu hỏi theo tài liệu trong phiên hiện tại</p>
-                <p className="text-xs mt-3 text-gray-300">AI nhớ 10 câu hỏi gần nhất • Đính kèm tài liệu bằng nút "Chọn từ thư viện"</p>
+                <p className="text-xs mt-3 text-gray-300">AI nhớ 3 đoạn hội thoại gần nhất • Đính kèm tài liệu bằng nút "Chọn từ thư viện"</p>
               </div>
             )}
             {messages.map((m: ChatMessage) => (
@@ -668,7 +668,7 @@ export default function Chat() {
             </button>
           </div>
           <p className="text-center text-[10px] text-gray-300 mt-2">
-            AI nhớ 10 câu hỏi gần nhất trong phiên • Ưu tiên tài liệu đã upload hoặc đính kèm trong session
+            AI nhớ 3 đoạn hội thoại gần nhất trong phiên • Ưu tiên tài liệu đã upload hoặc đính kèm trong session
           </p>
         </div>
       </div>

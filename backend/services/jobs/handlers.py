@@ -109,7 +109,11 @@ class ChatAnswerJobHandler(JobHandler):
         )
 
         job_service.update_progress(self.db, job, 60)
-        answer = OllamaAI().generate_answer(question, context, chat_history)
+        answer = context if context.startswith("Cấu trúc tài liệu được index:") else OllamaAI().generate_answer(
+            question,
+            context,
+            chat_history,
+        )
 
         job_service.update_progress(self.db, job, 90)
         ai_message.content = answer

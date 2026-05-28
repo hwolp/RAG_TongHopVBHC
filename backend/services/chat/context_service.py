@@ -9,7 +9,7 @@ from services.policies.access_policy import can_access_document
 def build_recent_chat_history(
     db: Session,
     session_id: int,
-    limit: int = 10,
+    limit: int = 3,
     exclude_message_id: int | None = None,
 ) -> str:
     recent_messages = ChatRepository(db).list_recent_messages(session_id, limit, exclude_message_id)

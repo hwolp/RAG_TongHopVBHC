@@ -43,6 +43,19 @@ _ADMIN_CHUNK_SIZE = 1600
 _ADMIN_CHUNK_OVERLAP = 250
 _NORMAL_CHUNK_SIZE = 1800
 _NORMAL_CHUNK_OVERLAP = 300
+_HEADING_PREFIX = r"^[\s`'\"“”‘’\-\–\—\:\.;,\(\)\[\]_|lI1]*"
+_CHAPTER_HEADER_PATTERN = re.compile(
+    _HEADING_PREFIX + r"Chương\s+([IVXLCDM\dHỊÍÌÎÏIl]+)\s*[\.\:\-]?\s*([^\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+_ARTICLE_HEADER_PATTERN = re.compile(
+    _HEADING_PREFIX + r"Điều\s+(\d+)\s*[\.\:\-]\s*([^\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+_CLAUSE_HEADER_PATTERN = re.compile(
+    _HEADING_PREFIX + r"Khoản\s+(\d+)\s*[\.\:\-]\s*([^\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def _ocr_page_to_text(page) -> str:
@@ -146,16 +159,153 @@ def _is_administrative_text(full_text: str) -> bool:
     return matches >= 2
 
 
-def _split_administrative(pages: list[LCDocument]) -> list[LCDocument]:
+def _clean_heading_title(value: str | None) -> str:
+    clean_value = re.sub(r"\s+", " ", value or "")
+    clean_value = re.sub(r"^[`'\"“”‘’\-\–\—\:\.;,\(\)\[\]_|lI1\s]+", "", clean_value)
+    clean_value = re.sub(r"[`'\"“”‘’\-\–\—\:\.;,\(\)\[\]_|¬ˆ\s]+$", "", clean_value)
+    return clean_value.strip(" .:-")
+
+
+def _normalize_chapter_number(value: str) -> str:
+    token = re.sub(r"[^IVXLCDM\dHỊÍÌÎÏl]", "", value or "", flags=re.IGNORECASE).upper()
+    token = (
+        token.replace("Ị", "I")
+        .replace("Í", "I")
+        .replace("Ì", "I")
+        .replace("Î", "I")
+        .replace("Ï", "I")
+    )
+    if token == "L":
+        token = "I"
+    if token.startswith("H"):
+        token = "II" + token[1:]
+    return token
+
+
+def _next_heading_title(full_text: str, heading_end: int) -> str:
+    for raw_line in full_text[heading_end:].splitlines()[1:4]:
+        title = _clean_heading_title(raw_line)
+        if not title:
+            continue
+        if re.match(r"^(Chương|Điều|Khoản)\b", title, re.IGNORECASE):
+            return ""
+        if len(title) <= 120:
+            return title
+    return ""
+
+
+def _is_false_chapter_heading(match: re.Match) -> bool:
+    title = _clean_heading_title(match.group(2)).lower()
+    return any(marker in title for marker in ("thông tư", "nghị định", "văn bản này"))
+
+
+def _is_false_article_heading(match: re.Match) -> bool:
+    title = _clean_heading_title(match.group(2)).lower()
+    false_markers = (
+        "nghị định số",
+        "thông tư số",
+        "được sửa",
+        "quy định tại",
+        "của thông tư",
+    )
+    return any(marker in title for marker in false_markers)
+
+
+def _chapter_heading_matches(full_text: str) -> list[re.Match]:
+    return [match for match in _CHAPTER_HEADER_PATTERN.finditer(full_text) if not _is_false_chapter_heading(match)]
+
+
+def _article_heading_matches(full_text: str) -> list[re.Match]:
+    return [match for match in _ARTICLE_HEADER_PATTERN.finditer(full_text) if not _is_false_article_heading(match)]
+
+
+def _last_chapter_before(chapter_matches: list[re.Match], position: int, full_text: str) -> tuple[str, str]:
+    selected = None
+    for match in chapter_matches:
+        if match.start() > position:
+            break
+        selected = match
+    if not selected:
+        return "", ""
+    chapter_title = _clean_heading_title(selected.group(2))
+    if not chapter_title:
+        chapter_title = _next_heading_title(full_text, selected.end())
+    return _normalize_chapter_number(selected.group(1)), chapter_title
+
+
+def _section_path(chapter_number: str, article_number: str) -> str:
+    parts = []
+    if chapter_number:
+        parts.append(f"Chương {chapter_number}")
+    if article_number:
+        parts.append(f"Điều {article_number}")
+    return " > ".join(parts)
+
+
+def _make_parent_metadata(
+    base_meta: dict,
+    doc_id: int,
+    parent_index: int,
+    parent_type: str,
+    chapter_number: str = "",
+    chapter_title: str = "",
+    article_number: str = "",
+    article_title: str = "",
+    clause_number: str = "",
+    clause_title: str = "",
+) -> dict:
+    parent_key = article_number or clause_number or str(parent_index)
+    parent_id = f"doc-{doc_id}:{parent_type}-{parent_key}"
+    return {
+        **base_meta,
+        "chunk_type": "child",
+        "parent_id": parent_id,
+        "parent_type": parent_type,
+        "parent_index": parent_index,
+        "chapter_number": chapter_number,
+        "chapter_title": chapter_title,
+        "article_number": article_number,
+        "article_title": article_title,
+        "clause_number": clause_number,
+        "clause_title": clause_title,
+        "section_path": _section_path(chapter_number, article_number),
+    }
+
+
+def _append_parent_children(
+    result: list[LCDocument],
+    parent_text: str,
+    parent_meta: dict,
+    parent_header: str,
+    splitter: RecursiveCharacterTextSplitter,
+) -> None:
+    parent_text = parent_text.strip()
+    if not parent_text:
+        return
+
+    child_texts = [parent_text] if len(parent_text) <= _ADMIN_CHUNK_SIZE else splitter.split_text(parent_text)
+    child_count = len(child_texts)
+    for index, child_text in enumerate(child_texts):
+        content = child_text
+        if index > 0 and parent_header:
+            content = f"[{parent_header}] (tiếp)\n{child_text}"
+        child_meta = {
+            **parent_meta,
+            "child_index": index,
+            "parent_child_count": child_count,
+        }
+        result.append(LCDocument(page_content=content, metadata=child_meta))
+
+
+def _split_administrative(
+    pages: list[LCDocument],
+    metadata: DocumentIndexMetadata | None = None,
+) -> list[LCDocument]:
     full_text = "\n".join(page.page_content for page in pages)
     base_meta = pages[0].metadata if pages else {}
-
-    article_pattern = re.compile(r"(?=\nĐiều\s+\d+[\s\.\:])", re.IGNORECASE)
-    raw_chunks = article_pattern.split("\n" + full_text)
-
-    if len(raw_chunks) <= 1:
-        clause_pattern = re.compile(r"(?=\nKhoản\s+\d+[\s\.\:])", re.IGNORECASE)
-        raw_chunks = clause_pattern.split("\n" + full_text)
+    doc_id = metadata.doc_id if metadata else int(base_meta.get("doc_id", 0) or 0)
+    chapter_matches = _chapter_heading_matches(full_text)
+    article_matches = _article_heading_matches(full_text)
 
     fallback_splitter = RecursiveCharacterTextSplitter(
         chunk_size=_ADMIN_CHUNK_SIZE,
@@ -164,22 +314,55 @@ def _split_administrative(pages: list[LCDocument]) -> list[LCDocument]:
     )
 
     result: list[LCDocument] = []
-    for chunk_text in raw_chunks:
-        chunk_text = chunk_text.strip()
-        if not chunk_text:
-            continue
+    if article_matches:
+        preamble = full_text[: article_matches[0].start()].strip()
+        if preamble:
+            parent_meta = _make_parent_metadata(dict(base_meta), doc_id, 0, "preamble")
+            _append_parent_children(result, preamble, parent_meta, "Phần mở đầu", fallback_splitter)
 
-        title_match = re.match(r"(Điều\s+\d+[^\n]*)", chunk_text, re.IGNORECASE)
-        article_header = title_match.group(1).strip() if title_match else ""
+        for parent_index, match in enumerate(article_matches, start=1):
+            next_start = article_matches[parent_index].start() if parent_index < len(article_matches) else len(full_text)
+            article_text = full_text[match.start():next_start].strip()
+            chapter_number, chapter_title = _last_chapter_before(chapter_matches, match.start(), full_text)
+            article_number = match.group(1).strip()
+            article_title = _clean_heading_title(match.group(2))
+            article_header = f"Điều {article_number}"
+            if article_title:
+                article_header = f"{article_header}. {article_title}"
+            parent_meta = _make_parent_metadata(
+                dict(base_meta),
+                doc_id,
+                parent_index,
+                "article",
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                article_number=article_number,
+                article_title=article_title,
+            )
+            _append_parent_children(result, article_text, parent_meta, article_header, fallback_splitter)
 
-        if len(chunk_text) <= 1200:
-            result.append(LCDocument(page_content=chunk_text, metadata=dict(base_meta)))
-            continue
+        return result
 
-        sub_docs = fallback_splitter.split_text(chunk_text)
-        for index, sub in enumerate(sub_docs):
-            content = sub if index == 0 or not article_header else f"[{article_header}] (tiếp)\n{sub}"
-            result.append(LCDocument(page_content=content, metadata=dict(base_meta)))
+    clause_matches = list(_CLAUSE_HEADER_PATTERN.finditer(full_text))
+    if clause_matches:
+        for parent_index, match in enumerate(clause_matches, start=1):
+            next_start = clause_matches[parent_index].start() if parent_index < len(clause_matches) else len(full_text)
+            clause_text = full_text[match.start():next_start].strip()
+            clause_number = match.group(1).strip()
+            clause_title = _clean_heading_title(match.group(2))
+            clause_header = f"Khoản {clause_number}"
+            if clause_title:
+                clause_header = f"{clause_header}. {clause_title}"
+            parent_meta = _make_parent_metadata(
+                dict(base_meta),
+                doc_id,
+                parent_index,
+                "clause",
+                clause_number=clause_number,
+                clause_title=clause_title,
+            )
+            _append_parent_children(result, clause_text, parent_meta, clause_header, fallback_splitter)
+        return result
 
     return result if result else [LCDocument(page_content=full_text[:2000], metadata=dict(base_meta))]
 
@@ -240,7 +423,12 @@ class DocumentProcessor:
         if not ocr_text.strip():
             logging.warning("Page %s OCR returned empty result", page_index)
             return
-
+        print(
+            f"\n===== OCR TEXT START page={page_index + 1} =====\n"
+            f"{ocr_text}\n"
+            f"===== OCR TEXT END page={page_index + 1} =====\n",
+            flush=True,
+        )
         original_text = page.page_content
         page.page_content = f"{original_text}\n\n[OCR Result]\n{ocr_text}" if original_text.strip() else ocr_text
 
@@ -252,10 +440,12 @@ class DocumentProcessor:
     ) -> list[LCDocument]:
         sample_text = "\n".join(page.page_content for page in pages[:5])
         is_admin = force_admin_chunking or _is_administrative_text(sample_text)
-        splits = _split_administrative(pages) if is_admin else _split_normal(pages)
+        splits = _split_administrative(pages, metadata) if is_admin else _split_normal(pages)
         chunk_strategy = "administrative" if is_admin else "normal"
 
         chroma_metadata = metadata.as_chroma_metadata(chunk_strategy)
-        for split in splits:
+        for index, split in enumerate(splits):
+            split.metadata.setdefault("chunk_type", "child")
+            split.metadata.setdefault("chunk_index", index)
             split.metadata.update(chroma_metadata)
         return splits
