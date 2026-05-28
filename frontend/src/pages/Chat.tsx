@@ -50,7 +50,6 @@ export default function Chat() {
   const [activeSession, setActiveSession] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [scope, setScope] = useState("personal");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -220,7 +219,7 @@ export default function Chat() {
     setLoading(true);
     try {
       const r = await api.post("/employee/chat", {
-        question, scope,
+        question,
         session_id: activeSession,
       });
       const sessionId = r.data.session_id;
@@ -402,6 +401,16 @@ export default function Chat() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   const attachedIds = new Set(attachedDocs.map(a => a.doc_id));
+  const sourceNameById = new Map<string, string>();
+  attachedDocs.forEach(doc => sourceNameById.set(String(doc.doc_id), doc.filename));
+  sessionDocs.forEach((doc: any) => sourceNameById.set(String(doc.id), doc.filename));
+
+  const sourceLabel = (source: unknown) => {
+    const sourceId = String(source);
+    const filename = sourceNameById.get(sourceId);
+    return filename ? `${filename} (#${sourceId})` : `Tài liệu #${sourceId}`;
+  };
+
   const sessionDocStatusLabel = (doc: any) => {
     const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
     const labels: Record<string, string> = {
@@ -462,19 +471,6 @@ export default function Chat() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
         <div className="p-3 border-b border-white/60 bg-[#e7e5e4]/80 flex items-center gap-3 flex-wrap">
-          <span className="text-xs font-semibold text-slate-500">Phạm vi:</span>
-          {[
-            { key: "personal", label: "Cá nhân" },
-            { key: "department", label: "Phòng ban" },
-            { key: "company", label: "Toàn công ty" },
-          ].map(s => (
-            <button key={s.key} onClick={() => setScope(s.key)}
-              className={`neo-button !min-h-0 rounded-full px-3 py-1.5 text-xs
-                ${scope === s.key ? "neo-button-primary" : ""}`}>
-              {s.label}
-            </button>
-          ))}
-
           {activeSession && <span className="ml-auto text-xs text-slate-500">Session #{activeSession}</span>}
 
           {/* Hidden file input for upload */}
@@ -571,7 +567,7 @@ export default function Chat() {
               <div className="flex flex-col items-center justify-center h-full text-gray-400">
                 <Bot className="w-16 h-16 mb-4 opacity-20" />
                 <p className="text-lg font-medium">Trợ lý AI Hành Chính</p>
-                <p className="text-sm mt-1">Chọn phạm vi quét dữ liệu và đặt câu hỏi</p>
+                <p className="text-sm mt-1">Đặt câu hỏi theo tài liệu trong phiên hiện tại</p>
                 <p className="text-xs mt-3 text-gray-300">AI nhớ 10 câu hỏi gần nhất • Đính kèm tài liệu bằng nút "Chọn từ thư viện"</p>
               </div>
             )}
@@ -589,7 +585,7 @@ export default function Chat() {
                         if (s.length === 0) return null;
                         return (
                           <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-400">
-                            📎 Nguồn: {s.join(", ")}
+                            📎 Nguồn: {s.map(sourceLabel).join(", ")}
                           </div>
                         );
                       } catch { return null; }
@@ -672,7 +668,7 @@ export default function Chat() {
             </button>
           </div>
           <p className="text-center text-[10px] text-gray-300 mt-2">
-            AI nhớ 10 câu hỏi gần nhất trong phiên • Chọn scope phù hợp để có kết quả chính xác
+            AI nhớ 10 câu hỏi gần nhất trong phiên • Ưu tiên tài liệu đã upload hoặc đính kèm trong session
           </p>
         </div>
       </div>

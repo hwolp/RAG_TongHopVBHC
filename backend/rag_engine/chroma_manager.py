@@ -30,6 +30,9 @@ _SUMMARY_QUERY_PATTERNS = [
     r"\bkh[aá]i\s+qu[aá]t\b",
     r"\bt[oà]ng\s+quan\b",
 ]
+_DEFAULT_RETRIEVAL_K = 8
+_ATTACHED_DOC_RETRIEVAL_K = 6
+_SUMMARY_DOC_CONTEXT_LIMIT = 16
 
 
 def _build_chroma_filter(conditions: dict) -> Optional[dict]:
@@ -109,7 +112,7 @@ class ChromaDBManager(VectorStoreInterface):
         user_id: int,
         user_dept_id: int,
         search_scope: str = "personal",
-        k: int = 5,
+        k: int = _DEFAULT_RETRIEVAL_K,
         session_id: Optional[int] = None,
         extra_doc_ids: Optional[list[int]] = None,
     ) -> tuple[str, list[str]]:
@@ -118,7 +121,17 @@ class ChromaDBManager(VectorStoreInterface):
         docs = self._merge_attached_docs(query, docs, extra_doc_ids)
 
         text_content = "\n\n".join(doc.page_content for doc in docs)
-        sources = list({str(doc.metadata.get("doc_id", "N/A")) for doc in docs})
+        sources = []
+        seen_sources = set()
+        for doc in docs:
+            doc_id = doc.metadata.get("doc_id")
+            if doc_id is None:
+                continue
+            source = str(doc_id)
+            if source in seen_sources:
+                continue
+            sources.append(source)
+            seen_sources.add(source)
         return text_content, sources
 
     def _scope_filter(
@@ -158,10 +171,14 @@ class ChromaDBManager(VectorStoreInterface):
         for doc_id in extra_doc_ids:
             try:
                 if summary_query:
-                    attached_docs.extend(self.get_doc_context_chunks(doc_id, limit=12))
+                    attached_docs.extend(self.get_doc_context_chunks(doc_id, limit=_SUMMARY_DOC_CONTEXT_LIMIT))
                 else:
                     attached_docs.extend(
-                        self.vectordb.similarity_search(query, k=4, filter={"doc_id": doc_id})
+                        self.vectordb.similarity_search(
+                            query,
+                            k=_ATTACHED_DOC_RETRIEVAL_K,
+                            filter={"doc_id": doc_id},
+                        )
                     )
             except Exception:
                 continue

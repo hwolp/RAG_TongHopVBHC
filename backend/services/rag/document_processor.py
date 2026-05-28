@@ -37,6 +37,12 @@ _OCR_CONFIGS = [
     "--oem 1 --psm 6 -c preserve_interword_spaces=1",
     "--oem 1 --psm 4 -c preserve_interword_spaces=1",
 ]
+_OCR_ACCEPT_MIN_CHARS = 80
+_OCR_ACCEPT_MIN_CONFIDENCE = 55.0
+_ADMIN_CHUNK_SIZE = 1600
+_ADMIN_CHUNK_OVERLAP = 250
+_NORMAL_CHUNK_SIZE = 1800
+_NORMAL_CHUNK_OVERLAP = 300
 
 
 def _ocr_page_to_text(page) -> str:
@@ -76,32 +82,57 @@ def _prepare_ocr_image(image: Image.Image) -> Image.Image:
     return gray.point(lambda pixel: 255 if pixel > 168 else 0)
 
 
+def _ocr_with_config(image: Image.Image, config: str) -> tuple[str, float]:
+    data = pytesseract.image_to_data(
+        image,
+        lang=_OCR_LANG,
+        config=config,
+        output_type=pytesseract.Output.DICT,
+    )
+    confidences = []
+    for confidence in data.get("conf", []):
+        try:
+            numeric_confidence = float(confidence)
+        except (TypeError, ValueError):
+            continue
+        if numeric_confidence >= 0:
+            confidences.append(numeric_confidence)
+
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+    text = pytesseract.image_to_string(image, lang=_OCR_LANG, config=config).strip()
+    return text, avg_confidence
+
+
+def _is_ocr_result_good_enough(text: str, confidence: float) -> bool:
+    return len(text.strip()) >= _OCR_ACCEPT_MIN_CHARS and confidence >= _OCR_ACCEPT_MIN_CONFIDENCE
+
+
+def _ocr_result_score(text: str, confidence: float) -> float:
+    return confidence + min(len(text), 4000) / 4000
+
+
 def _best_ocr_result(image: Image.Image) -> tuple[str, float]:
-    best_text = ""
-    best_confidence = -1.0
+    if not _OCR_CONFIGS:
+        return "", 0.0
 
-    for config in _OCR_CONFIGS:
-        data = pytesseract.image_to_data(
-            image,
-            lang=_OCR_LANG,
-            config=config,
-            output_type=pytesseract.Output.DICT,
-        )
-        confidences = []
-        for confidence in data.get("conf", []):
-            try:
-                numeric_confidence = float(confidence)
-            except (TypeError, ValueError):
-                continue
-            if numeric_confidence >= 0:
-                confidences.append(numeric_confidence)
+    best_text, best_confidence = _ocr_with_config(image, _OCR_CONFIGS[0])
+    if _is_ocr_result_good_enough(best_text, best_confidence):
+        return best_text, best_confidence
 
-        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        text = pytesseract.image_to_string(image, lang=_OCR_LANG, config=config).strip()
-        score = avg_confidence + min(len(text), 4000) / 4000
-        if text and score > best_confidence:
+    best_score = _ocr_result_score(best_text, best_confidence)
+    logging.info(
+        "Primary OCR result weak: %s chars, confidence %.1f; trying fallback config",
+        len(best_text),
+        best_confidence,
+    )
+
+    for config in _OCR_CONFIGS[1:]:
+        text, confidence = _ocr_with_config(image, config)
+        score = _ocr_result_score(text, confidence)
+        if text and score > best_score:
             best_text = text
-            best_confidence = score
+            best_confidence = confidence
+            best_score = score
 
     return best_text, best_confidence
 
@@ -127,8 +158,8 @@ def _split_administrative(pages: list[LCDocument]) -> list[LCDocument]:
         raw_chunks = clause_pattern.split("\n" + full_text)
 
     fallback_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=100,
+        chunk_size=_ADMIN_CHUNK_SIZE,
+        chunk_overlap=_ADMIN_CHUNK_OVERLAP,
         separators=_NORMAL_SEPARATORS,
     )
 
@@ -155,8 +186,8 @@ def _split_administrative(pages: list[LCDocument]) -> list[LCDocument]:
 
 def _split_normal(pages: list[LCDocument]) -> list[LCDocument]:
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=150,
+        chunk_size=_NORMAL_CHUNK_SIZE,
+        chunk_overlap=_NORMAL_CHUNK_OVERLAP,
         separators=_NORMAL_SEPARATORS,
     )
     return splitter.split_documents(pages)
