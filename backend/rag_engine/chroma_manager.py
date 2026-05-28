@@ -42,6 +42,7 @@ _ATTACHED_DOC_RETRIEVAL_K = 6
 _SUMMARY_DOC_CONTEXT_LIMIT = 16
 _PARENT_CONTEXT_LIMIT = 8
 _STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
+_STRUCTURE_CONTEXT_PREFIX = "Văn bản gồm các phần sau:"
 
 
 def _build_chroma_filter(conditions: dict) -> Optional[dict]:
@@ -62,6 +63,10 @@ def _is_structure_query(query: str) -> bool:
     return any(re.search(pattern, query or "", re.IGNORECASE) for pattern in _STRUCTURE_QUERY_PATTERNS)
 
 
+def is_structure_context(context: str) -> bool:
+    return context.startswith(_STRUCTURE_CONTEXT_PREFIX) or context.startswith("Cấu trúc tài liệu được index:")
+
+
 def _natural_sort_key(value: str) -> tuple[int, str]:
     normalized = str(value or "").strip()
     if normalized.isdigit():
@@ -77,6 +82,32 @@ def _natural_sort_key(value: str) -> tuple[int, str]:
             total += current
             previous = current
     return (total or 9999), normalized
+
+
+def _article_sort_number(value: str) -> Optional[int]:
+    normalized = str(value or "").strip()
+    return int(normalized) if normalized.isdigit() else None
+
+
+def _clean_structure_title(value: str) -> str:
+    title = re.sub(r"\s+", " ", value or "").strip()
+    replacements = [
+        (r"\b[ĐđD][ÓỐóố]I\s+V[Ớớ]I\b", "ĐỐI VỚI"),
+        (r"\bQUẦN\s+NHÂN\b", "QUÂN NHÂN"),
+        (r"\bTỎ\s+CHỨC\b", "TỔ CHỨC"),
+        (r"\bTHỊ\s+HÀNH\d*\b", "THI HÀNH"),
+        (r"\btỗ chức\b", "tổ chức"),
+        (r"\bPhân cấp tỗ chức\b", "Phân cấp tổ chức"),
+        (r"\blời điền\b", "lời điếu"),
+        (r"\bNhân đân\b", "Nhân dân"),
+        (r"\bnhân đân\b", "nhân dân"),
+        (r"\bbảo đám\b", "bảo đảm"),
+    ]
+    for pattern, replacement in replacements:
+        title = re.sub(pattern, replacement, title, flags=re.IGNORECASE)
+    title = re.sub(r"^[*®\s]+", "", title)
+    title = re.sub(r"[“”‘’\"'®ế\d\s]+$", "", title)
+    return title.strip(" .:-")
 
 
 class ChromaDBManager(VectorStoreInterface):
@@ -293,10 +324,10 @@ class ChromaDBManager(VectorStoreInterface):
             if not meta or not meta.get("doc_id"):
                 continue
             doc_id = str(meta.get("doc_id"))
-            doc_structure = structures.setdefault(doc_id, {"chapters": {}, "articles": {}})
+            doc_structure = structures.setdefault(doc_id, {"chapters": {}, "articles": {}, "list_sections": {}})
 
             chapter_number = str(meta.get("chapter_number") or "").strip()
-            chapter_title = str(meta.get("chapter_title") or "").strip()
+            chapter_title = _clean_structure_title(str(meta.get("chapter_title") or "").strip())
             if chapter_number:
                 chapter = doc_structure["chapters"].setdefault(
                     chapter_number,
@@ -306,7 +337,7 @@ class ChromaDBManager(VectorStoreInterface):
                     chapter["title"] = chapter_title
 
             article_number = str(meta.get("article_number") or "").strip()
-            article_title = str(meta.get("article_title") or "").strip()
+            article_title = _clean_structure_title(str(meta.get("article_title") or "").strip())
             if article_number:
                 article = {"title": article_title, "chapter_number": chapter_number}
                 doc_structure["articles"].setdefault(article_number, article)
@@ -315,21 +346,51 @@ class ChromaDBManager(VectorStoreInterface):
                 if chapter_number:
                     doc_structure["chapters"][chapter_number]["articles"].setdefault(article_number, article)
 
-        lines = ["Cấu trúc tài liệu được index:"]
+            list_section_number = str(meta.get("list_section_number") or "").strip()
+            list_section_title = _clean_structure_title(str(meta.get("list_section_title") or "").strip())
+            list_item_number = str(meta.get("list_item_number") or "").strip()
+            list_item_title = _clean_structure_title(str(meta.get("list_item_title") or "").strip())
+            if list_section_number:
+                section = doc_structure["list_sections"].setdefault(
+                    list_section_number,
+                    {"title": list_section_title, "items": {}},
+                )
+                if list_section_title and not section["title"]:
+                    section["title"] = list_section_title
+                if list_item_number:
+                    item = section["items"].setdefault(list_item_number, {"title": list_item_title})
+                    if list_item_title and not item["title"]:
+                        item["title"] = list_item_title
+
+        lines = [_STRUCTURE_CONTEXT_PREFIX]
         sources = []
         for doc_id in sorted(structures, key=_natural_sort_key):
             structure = structures[doc_id]
             sources.append(doc_id)
-            lines.append(f"Tài liệu #{doc_id}:")
+            last_article_number = 0
             if structure["chapters"]:
                 for chapter_number in sorted(structure["chapters"], key=_natural_sort_key):
                     chapter = structure["chapters"][chapter_number]
                     title = f": {chapter['title']}" if chapter["title"] else ""
                     lines.append(f"- Chương {chapter_number}{title}")
                     for article_number in sorted(chapter["articles"], key=_natural_sort_key):
+                        numeric_article = _article_sort_number(article_number)
+                        if numeric_article is not None and numeric_article <= last_article_number:
+                            continue
+                        if numeric_article is not None:
+                            last_article_number = numeric_article
                         article = chapter["articles"][article_number]
                         article_title = f": {article['title']}" if article["title"] else ""
                         lines.append(f"  - Điều {article_number}{article_title}")
+            elif structure["list_sections"]:
+                for section_number in sorted(structure["list_sections"], key=_natural_sort_key):
+                    section = structure["list_sections"][section_number]
+                    title = f" {section['title']}" if section["title"] else ""
+                    lines.append(f"- {section_number}.{title}")
+                    for item_number in sorted(section["items"], key=_natural_sort_key):
+                        item = section["items"][item_number]
+                        item_title = f" {item['title']}" if item["title"] else ""
+                        lines.append(f"  - {item_number}.{item_title}")
             elif structure["articles"]:
                 for article_number in sorted(structure["articles"], key=_natural_sort_key):
                     article = structure["articles"][article_number]

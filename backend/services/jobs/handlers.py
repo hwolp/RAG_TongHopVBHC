@@ -109,7 +109,9 @@ class ChatAnswerJobHandler(JobHandler):
         )
 
         job_service.update_progress(self.db, job, 60)
-        answer = context if context.startswith("Cấu trúc tài liệu được index:") else OllamaAI().generate_answer(
+        from rag_engine.chroma_manager import is_structure_context
+
+        answer = context if is_structure_context(context) else OllamaAI().generate_answer(
             question,
             context,
             chat_history,

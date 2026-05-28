@@ -1,121 +1,59 @@
 # OCR Setup for Scanned PDFs
 
 ## Problem
-Hầu hết văn bản hành chính VN là bản scan → `PyMuPDFLoader` chỉ extract text layer, không OCR ảnh → mất gần hết nội dung.
 
-## Solution
-Enable OCR support cho trang PDF scan (tự động detect + extract).
+Van ban scan khong co text layer day du, nen `PyMuPDFLoader` co the doc thieu noi dung. Trang PDF co text ngan hon nguong se duoc render thanh anh va chay OCR truoc khi chunk/index.
 
-## Quick Install (Windows)
+## Engine hien tai
 
-### Option 1: Tesseract (Recommended for Windows)
+Backend hien dung Tesseract local qua `pytesseract`.
 
-1. **Download & Install Tesseract:**
-   - https://github.com/UB-Mannheim/tesseract/wiki
-   - Hoặc chạy: `choco install tesseract` (nếu có Chocolatey)
-   - Default install path: `C:\Program Files\Tesseract-OCR`
-
-2. **Install pytesseract (Python wrapper):**
-   ```powershell
-   pip install pytesseract pdf2image
-   ```
-
-3. **Update backend/rag_engine/chroma_manager.py** — Replace OCR import:
-   ```python
-   # Replace the EasyOCR section with:
-   try:
-       import pytesseract
-       from PIL import Image
-       PYTESSERACT_AVAILABLE = True
-   except ImportError:
-       PYTESSERACT_AVAILABLE = False
-       logging.warning("pytesseract not installed — OCR disabled")
-   ```
-
-4. **Update `_get_ocr_reader()` function:**
-   ```python
-   def _get_ocr_reader():
-       """Return pytesseract (no lazy loading needed)."""
-       return pytesseract if PYTESSERACT_AVAILABLE else None
-   ```
-
-5. **Update `_ocr_page_to_text(page)` function:**
-   ```python
-   def _ocr_page_to_text(page) -> str:
-       """OCR PDF page using Tesseract."""
-       reader = _get_ocr_reader()
-       if reader is None:
-           logging.warning("Tesseract not available, skipping OCR")
-           return ""
-       
-       try:
-           # Convert PDF page → PIL Image
-           pix = page.get_pixmap(matrix=None, alpha=False, clip=None)
-           img_data = pix.tobytes("ppm")
-           img = Image.open(io.BytesIO(img_data))
-           
-           # Extract text
-           text = pytesseract.image_to_string(img, lang='vie')
-           return text
-       except Exception as e:
-           logging.error(f"OCR failed: {e}")
-           return ""
-   ```
-
-### Option 2: EasyOCR (Pure Python, no binary needed)
-
-⚠️ **Note:** EasyOCR has heavy build dependencies (`python-bidi`). May require build tools.
-
-```powershell
-# Install build tools first (if needed)
-pip install --upgrade setuptools wheel
-
-# Then install easyocr
-pip install easyocr --no-build-isolation --prefer-binary
+```env
+OCR_RENDER_SCALE=3
+TESSERACT_OCR_LANG=vie
+TESSERACT_AUTO_DOWNLOAD_VIE=true
+TESSERACT_TESSDATA_DIR=tessdata
+TESSERACT_OCR_IMAGE_VARIANTS=grayscale,threshold
+OCR_MAX_WORKERS=5
+TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 ```
 
-### Option 3: Cloud OCR (Google Vision, Azure, AWS Textract)
+`TESSERACT_CMD`, `TESSERACT_OCR_LANG`, `TESSERACT_TESSDATA_DIR`, va `TESSERACT_OCR_IMAGE_VARIANTS` la tuy chon. Mac dinh backend dung ngon ngu `vie` va tu tai `vie.traineddata` tu `tessdata_best` ve `backend/tessdata/` trong lan OCR dau tien neu file chua ton tai. Nen uu tien `vie` thay vi `vie+eng` cho van ban hanh chinh tieng Viet, vi `eng` co the lam Tesseract nham dau tieng Viet va so La Ma trong heading.
 
-Dùng cloud OCR service:
-```python
-# Modify _ocr_page_to_text() để call cloud API
-# Example: Google Cloud Vision API
+## Quick Install
+
+```powershell
+cd backend
+pip install -r requirements.txt
+```
+
+Can cai Tesseract binary tren may neu chua co:
+
+```powershell
+choco install tesseract
+```
+
+Hoac cai ban Windows tu UB Mannheim:
+
+```text
+https://github.com/UB-Mannheim/tesseract/wiki
 ```
 
 ## How It Works
 
-**Automatic Detection:**
-```python
-# In process_and_store_pdf():
-if _is_page_scanned(page_text):  # Detected < 500 chars
-    ocr_text = _ocr_page_to_text(page)
-    page.content = original_text + "\n[OCR Result]\n" + ocr_text
-```
+1. `PyMuPDFLoader` doc text layer cua PDF.
+2. Trang nao co text ngan hon `500` ky tu se duoc xem la scan.
+3. Trang scan duoc render voi `OCR_RENDER_SCALE=3`.
+4. Neu thieu `vie.traineddata`, backend tu tai ban `tessdata_best` ve `backend/tessdata/`.
+5. Cac trang can OCR duoc chay song song theo `OCR_MAX_WORKERS`.
+6. Tesseract OCR doc anh bang ngon ngu `vie`. Moi trang duoc cham diem qua 4 candidate: `grayscale + psm 6`, `grayscale + psm 4`, `threshold + psm 6`, va `threshold + psm 4`.
+7. OCR text duoc hau xu ly cac loi pho bien nhu `Chuong HI` thanh `Chuong III`, sau do ghep vao `page_content` va di qua chunk/index.
 
-**Chunking:**
-- Văn bản hành chính (Điều/Khoản) → administrative chunking
-- Văn bản thường → normal chunking
+## Troubleshooting
 
-## Testing
-
-```bash
-# Without OCR (default):
-python main.py  # Will warn about OCR not available
-
-# With Tesseract:
-# (After installing Tesseract binary + pytesseract)
-python main.py  # Will auto-detect and OCR scan pages
-```
-
-## Performance Notes
-
-| Approach | Speed | Quality | Dependencies |
-|----------|-------|---------|---|
-| No OCR | ✅ Fast | ❌ Poor for scans | None |
-| Tesseract | 🟡 ~2-3s/page | ✅ Good | Binary + pytesseract |
-| EasyOCR | 🟡 ~3-5s/page | ✅ Excellent | Heavy (torch + deps) |
-| Cloud | 🟡 ~500ms/page | ✅ Excellent | API key + network |
-
----
-
-**Status:** OCR is **completely optional**. System works fine without it (will log warnings). Enable only if processing many scanned PDFs.
+- Sau khi doi OCR setup, restart backend/worker de process moi nhan dependency/env moi.
+- Neu log bao `pytesseract not available`, cai lai package trong dung virtualenv worker dang dung.
+- Neu OCR tra ve rong, kiem tra Tesseract binary va file ngon ngu `vie.traineddata`.
+- Neu moi truong khong co internet, dat san `vie.traineddata` vao thu muc `backend/tessdata/` hoac tat `TESSERACT_AUTO_DOWNLOAD_VIE=false`.
+- Neu van mat dau tieng Viet tren trang scan, giu `TESSERACT_OCR_IMAGE_VARIANTS=grayscale,threshold`; tranh de threshold len truoc vi co the lam mat net dau mu, dau sac.
+- Neu may bi day CPU/RAM khi index file lon, giam `OCR_MAX_WORKERS` xuong `1` hoac `2`.

@@ -12,6 +12,8 @@ SQLAlchemy
 pymysql
 cryptography
 PyMuPDF
+pillow
+pytesseract
 passlib[bcrypt]
 python-jose[cryptography]
 python-dotenv

@@ -244,7 +244,9 @@ class ChatAnswerService:
     def _generate_answer(self, question: str, retrieved: RetrievedContext, chat_history: str) -> GeneratedAnswer:
         from rag_engine.ollama_ai import OllamaAI
 
-        if retrieved.context.startswith("Cấu trúc tài liệu được index:"):
+        from rag_engine.chroma_manager import is_structure_context
+
+        if is_structure_context(retrieved.context):
             return GeneratedAnswer(answer=retrieved.context, sources=retrieved.sources)
 
         answer = OllamaAI().generate_answer(question, retrieved.context, chat_history)
