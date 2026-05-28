@@ -84,8 +84,14 @@ def get_folder_tree(db: Session, user_id: int) -> dict:
         dept_name = dept_obj.name if dept_obj else f"Phòng ban #{dept_id}"
         dept_tree[dept_name] = [_doc_to_dict(db, d) for d in dept_docs]
     elif user.role == models.RoleEnum.employee:
+        if dept_id:
+            dept_docs = documents.list_department(dept_id)
+            dept_obj = departments.get(dept_id)
+            dept_name = dept_obj.name if dept_obj else f"Phòng ban #{dept_id}"
+            dept_tree[dept_name] = [_doc_to_dict(db, d) for d in dept_docs]
+
         shared_docs = documents.list_shared_with_user(user)
-        dept_tree["Duoc chia se lien phong"] = [_doc_to_dict(db, d) for d in shared_docs]
+        dept_tree["Được chia sẻ liên phòng"] = [_doc_to_dict(db, d) for d in shared_docs]
     else:
         dept_tree = {}
 

@@ -183,6 +183,7 @@ export default function AdminUsers() {
           full_name: payload.full_name,
           role: payload.role,
           department_id: payload.department_id,
+          password: form.password.trim() || undefined,
         });
       } else {
         await api.post("/admin/users", payload);
@@ -614,7 +615,19 @@ export default function AdminUsers() {
                 </label>
               </div>
 
-              {!editingUser && (
+              {editingUser ? (
+                <label className="space-y-1.5 block">
+                  <span className="text-xs font-medium text-gray-500">Mật khẩu mới</span>
+                  <input
+                    value={form.password}
+                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                    type="password"
+                    placeholder="Để trống nếu không đổi"
+                    autoComplete="new-password"
+                  />
+                </label>
+              ) : (
                 <label className="space-y-1.5 block">
                   <span className="text-xs font-medium text-gray-500">Mật khẩu ban đầu</span>
                   <input

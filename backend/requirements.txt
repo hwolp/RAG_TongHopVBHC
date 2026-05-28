@@ -17,5 +17,3 @@ pytesseract
 passlib[bcrypt]
 python-jose[cryptography]
 python-dotenv
-redis
-rq

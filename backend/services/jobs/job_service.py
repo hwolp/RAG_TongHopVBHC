@@ -1,13 +1,10 @@
 import json
-import logging
-import os
 import time
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from config import REDIS_URL, RQ_QUEUE_NAME
 from database import models
 from repositories.job_repository import BackgroundJobRepository
 from utils.time_utils import utc_now
@@ -21,13 +18,6 @@ STATUS_RUNNING = "running"
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
 TERMINAL_STATUSES = {STATUS_SUCCESS, STATUS_FAILED}
-
-
-def _env_enabled(name: str, default: bool = True) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _json_dumps(value: Any) -> str:
@@ -61,27 +51,6 @@ def serialize_job(job: models.BackgroundJob) -> dict:
     }
 
 
-def enqueue_job(job_id: int) -> bool:
-    try:
-        from redis import Redis
-        from rq import Queue
-
-        redis_connection = Redis.from_url(REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
-        queue = Queue(RQ_QUEUE_NAME, connection=redis_connection)
-        queue.enqueue("services.jobs.worker.run_job", job_id, job_timeout="30m")
-        return True
-    except Exception as exc:
-        if _env_enabled("ENABLE_INTERNAL_JOB_WORKER", True):
-            logging.info(
-                "Could not enqueue background job %s to Redis; internal worker will pick it up: %s",
-                job_id,
-                exc,
-            )
-        else:
-            logging.warning("Could not enqueue background job %s: %s", job_id, exc)
-        return False
-
-
 def create_job(
     db: Session,
     job_type: str,
@@ -90,7 +59,6 @@ def create_job(
     session_id: int | None = None,
     message_id: int | None = None,
     payload: dict | None = None,
-    auto_enqueue: bool = True,
 ) -> models.BackgroundJob:
     job = models.BackgroundJob(
         type=job_type,
@@ -103,8 +71,6 @@ def create_job(
         payload=_json_dumps(payload or {}),
     )
     BackgroundJobRepository(db).add(job)
-    if auto_enqueue:
-        enqueue_job(job.id)
     return job
 
 

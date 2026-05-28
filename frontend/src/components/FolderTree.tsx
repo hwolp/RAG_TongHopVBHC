@@ -43,6 +43,7 @@ type Props = {
   onDeselect?: (id: number) => void;
   onDownload?: (id: number) => void;
   onDelete?: (id: number, scope: string) => void;
+  canDelete?: (doc: FolderDoc) => boolean;
   onAttach?: (doc: FolderDoc) => void;
   attachedIds?: Set<number>;
   /** Ẩn section nếu không có quyền */
@@ -104,6 +105,7 @@ function DocRow({
   onDeselect,
   onDownload,
   onDelete,
+  canDelete,
   onAttach,
 }: {
   doc: FolderDoc;
@@ -114,6 +116,7 @@ function DocRow({
   onDeselect?: (id: number) => void;
   onDownload?: (id: number) => void;
   onDelete?: (id: number, scope: string) => void;
+  canDelete?: (doc: FolderDoc) => boolean;
   onAttach?: (doc: FolderDoc) => void;
 }) {
   const handleCheck = () => {
@@ -169,7 +172,7 @@ function DocRow({
             <Download className="w-3.5 h-3.5" />
           </button>
         )}
-        {onDelete && (
+        {onDelete && (!canDelete || canDelete(doc)) && (
           <button
             onClick={() => onDelete(doc.id, doc.scope)}
             title="Xóa"
@@ -191,6 +194,7 @@ type RowPropsForSection = {
   onDeselect?: (id: number) => void;
   onDownload?: (id: number) => void;
   onDelete?: (id: number, scope: string) => void;
+  canDelete?: (doc: FolderDoc) => boolean;
   onAttach?: (doc: FolderDoc) => void;
 };
 
@@ -208,6 +212,7 @@ function FolderSection({
   onDeselect,
   onDownload,
   onDelete,
+  canDelete,
   onAttach,
 }: {
   icon: React.ReactNode;
@@ -247,6 +252,7 @@ function FolderSection({
                 onDeselect={onDeselect}
                 onDownload={onDownload}
                 onDelete={onDelete}
+                canDelete={canDelete}
                 onAttach={onAttach}
               />
             ))
@@ -265,6 +271,7 @@ export default function FolderTree({
   onDeselect,
   onDownload,
   onDelete,
+  canDelete,
   onAttach,
   attachedIds = new Set(),
   hidePersonal = false,
@@ -279,6 +286,7 @@ export default function FolderTree({
     onDeselect,
     onDownload,
     onDelete,
+    canDelete,
     onAttach,
   };
 

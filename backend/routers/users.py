@@ -43,6 +43,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
             full_name=payload.full_name,
             role=payload.role,
             department_id=payload.department_id,
+            password=payload.password,
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Role không hợp lệ")

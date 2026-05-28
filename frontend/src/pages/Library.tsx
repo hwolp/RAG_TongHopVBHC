@@ -248,6 +248,7 @@ export default function Library() {
               hideDepartment={false}
               onDownload={handleDownload}
               onDelete={handleDelete}
+              canDelete={(doc) => doc.scope === "personal"}
             />
           )}
 

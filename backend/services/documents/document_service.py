@@ -346,7 +346,7 @@ class DocumentUploadService:
         doc = self.documents.get_active(doc_id)
         if not doc:
             raise not_found("Tai lieu khong ton tai")
-        if not can_access_document(self.db, user, doc):
+        if not self._can_update_document(user, doc):
             raise forbidden("Khong co quyen cap nhat tai lieu nay")
 
         clean_name = safe_filename(file.filename)
@@ -409,6 +409,19 @@ class DocumentUploadService:
         if user.role != models.RoleEnum.admin:
             raise forbidden("Chi admin duoc thao tac")
         return user
+
+    @staticmethod
+    def _can_update_document(user: models.User, doc: models.Document) -> bool:
+        scope = doc.scope.value if hasattr(doc.scope, "value") else str(doc.scope)
+        if user.role == models.RoleEnum.admin:
+            return True
+        if scope == models.ScopeEnum.personal.value:
+            return doc.owner_id == user.id
+        if scope == models.ScopeEnum.department.value:
+            return user.role == models.RoleEnum.manager and doc.department_id == user.department_id
+        if scope == models.ScopeEnum.sqp.value:
+            return False
+        return False
 
 
 class DocumentLifecycleService:

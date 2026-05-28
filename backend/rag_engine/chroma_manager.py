@@ -13,7 +13,12 @@ except ImportError:
 
 from langchain_core.documents import Document as LCDocument
 
-from config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
+from config import (
+    CHROMA_PERSIST_DIR,
+    EMBEDDING_MODEL,
+    EMBEDDING_MODEL_ALLOW_DOWNLOAD,
+    EMBEDDING_MODEL_CACHE_DIR,
+)
 from contracts.rag import VectorStoreInterface
 from rag_engine.models import DocumentIndexMetadata
 from services.rag.document_processor import (
@@ -119,9 +124,24 @@ def _clean_structure_title(value: str) -> str:
 class ChromaDBManager(VectorStoreInterface):
     def __init__(self, document_processor: DocumentProcessor | None = None):
         self.persist_directory = CHROMA_PERSIST_DIR
-        self.embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        self.embeddings = self._load_embeddings()
         self.vectordb = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
         self.document_processor = document_processor or DocumentProcessor()
+
+    def _load_embeddings(self) -> HuggingFaceEmbeddings:
+        model_options = {
+            "model_name": EMBEDDING_MODEL,
+            "cache_folder": EMBEDDING_MODEL_CACHE_DIR,
+        }
+        try:
+            return HuggingFaceEmbeddings(
+                **model_options,
+                model_kwargs={"local_files_only": True},
+            )
+        except Exception:
+            if not EMBEDDING_MODEL_ALLOW_DOWNLOAD:
+                raise
+            return HuggingFaceEmbeddings(**model_options)
 
     def add_documents(self, documents: list[LCDocument]) -> int:
         if not documents:

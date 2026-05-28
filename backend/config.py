@@ -16,6 +16,20 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _backend_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str(BASE_DIR / path)
+
+
 @dataclass(frozen=True)
 class JWTSettings:
     secret_key: str
@@ -40,12 +54,8 @@ class VectorSettings:
     chroma_persist_dir: str
     embedding_model_base_url: str
     embedding_model: str
-
-
-@dataclass(frozen=True)
-class JobSettings:
-    redis_url: str
-    rq_queue_name: str
+    embedding_model_cache_dir: str
+    embedding_model_allow_download: bool
 
 
 @dataclass(frozen=True)
@@ -61,7 +71,6 @@ class AppSettings:
     database: DatabaseSettings
     ollama: OllamaSettings
     vector: VectorSettings
-    jobs: JobSettings
     uploads: UploadSettings
 
 
@@ -83,10 +92,8 @@ OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0"))
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_DIR", "./database/chromadb_storage")
 EMBEDDING_MODEL_BASE_URL = os.getenv("EMBEDDING_MODEL_BASE_URL", "sentence-transformers")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-
-# === Background Jobs ===
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-RQ_QUEUE_NAME = os.getenv("RQ_QUEUE_NAME", "rag_jobs")
+EMBEDDING_MODEL_CACHE_DIR = _backend_path(os.getenv("EMBEDDING_MODEL_CACHE_DIR", "./models/huggingface"))
+EMBEDDING_MODEL_ALLOW_DOWNLOAD = _env_bool("EMBEDDING_MODEL_ALLOW_DOWNLOAD", True)
 
 # === Upload Directories ===
 UPLOAD_DIR_PERSONAL = os.getenv("UPLOAD_DIR_PERSONAL", "uploads/personal")
@@ -109,8 +116,9 @@ APP_SETTINGS = AppSettings(
         chroma_persist_dir=CHROMA_PERSIST_DIR,
         embedding_model_base_url=EMBEDDING_MODEL_BASE_URL,
         embedding_model=EMBEDDING_MODEL,
+        embedding_model_cache_dir=EMBEDDING_MODEL_CACHE_DIR,
+        embedding_model_allow_download=EMBEDDING_MODEL_ALLOW_DOWNLOAD,
     ),
-    jobs=JobSettings(redis_url=REDIS_URL, rq_queue_name=RQ_QUEUE_NAME),
     uploads=UploadSettings(
         personal_dir=UPLOAD_DIR_PERSONAL,
         department_dir=UPLOAD_DIR_DEPARTMENT,
