@@ -1,5 +1,5 @@
 from langchain_community.llms import Ollama
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TEMPERATURE, OLLAMA_TIMEOUT_SECONDS
 from contracts.rag import LLMProviderInterface
 from services.rag.prompt_builder import PromptBuilder
 
@@ -10,6 +10,7 @@ class OllamaAI(LLMProviderInterface):
             model=model_name or OLLAMA_MODEL,
             base_url=OLLAMA_BASE_URL,
             timeout=OLLAMA_TIMEOUT_SECONDS,
+            temperature=OLLAMA_TEMPERATURE,  # 0 = deterministic, bám sát context
         )
         self.prompt_builder = prompt_builder or PromptBuilder()
 

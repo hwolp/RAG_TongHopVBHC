@@ -43,6 +43,12 @@ _SUMMARY_DOC_CONTEXT_LIMIT = 16
 _PARENT_CONTEXT_LIMIT = 8
 _STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
 _STRUCTURE_CONTEXT_PREFIX = "Văn bản gồm các phần sau:"
+_ARTICLE_DIRECT_RETRIEVAL_MAX = 2   # tối đa retrieve trực tiếp 2 Điều / query
+_ARTICLE_DIRECT_CHUNK_LIMIT = 30    # một Điều hiếm khi có > 30 chunks
+_ARTICLE_QUERY_PATTERN = re.compile(
+    r"\bđi[eềệ]u\s+(\d+)\b",
+    re.IGNORECASE,
+)
 
 
 def _build_chroma_filter(conditions: dict) -> Optional[dict]:
@@ -183,7 +189,7 @@ class ChromaDBManager(VectorStoreInterface):
             if structure_context:
                 return structure_context, structure_sources
 
-        docs = self._similarity_search(query, k, scope_filter)
+        docs = self._article_aware_search(query, scope_filter, k)
         docs = self._merge_attached_docs(query, docs, extra_doc_ids)
         docs = self._expand_parent_context(docs)
 
@@ -223,6 +229,113 @@ class ChromaDBManager(VectorStoreInterface):
         if scope_filter:
             return self.vectordb.similarity_search(query, k=k, filter=scope_filter)
         return self.vectordb.similarity_search(query, k=k)
+
+    def _extract_article_numbers(self, query: str) -> list[str]:
+        """Trích xuất danh sách số Điều được nhắc trong câu hỏi.
+
+        Ví dụ: 'Điều 6 có nội dung gì?'  → ['6']
+                 'Điều 3 và Điều 5'       → ['3', '5']
+        Giới hạn tối đa _ARTICLE_DIRECT_RETRIEVAL_MAX Điều.
+        """
+        matches = _ARTICLE_QUERY_PATTERN.findall(query or "")
+        return matches[:_ARTICLE_DIRECT_RETRIEVAL_MAX]
+
+    def _combine_with_scope(
+        self,
+        scope_filter: Optional[dict],
+        extra_condition: dict,
+    ) -> dict:
+        """Kết hợp scope_filter sẵn có với một điều kiện metadata bổ sung.
+
+        Xử lý 3 trường hợp:
+        - scope_filter là None              → chỉ dùng extra_condition
+        - scope_filter là {"$and": [...]}   → thêm extra_condition vào mảng $and
+        - scope_filter là {"field": value}  → bọc cả hai trong $and
+        """
+        if not scope_filter:
+            return extra_condition
+        if "$and" in scope_filter:
+            return {"$and": scope_filter["$and"] + [extra_condition]}
+        return {"$and": [scope_filter, extra_condition]}
+
+    def _get_article_chunks(self, where_filter: dict) -> list[LCDocument]:
+        """Lấy toàn bộ chunks của một Điều trực tiếp từ ChromaDB theo metadata filter.
+
+        Kết quả được sắp xếp theo parent_index → child_index để đảm bảo
+        nội dung liên tục, đúng thứ tự trong văn bản gốc.
+        """
+        try:
+            collection = self.vectordb._collection
+            results = collection.get(
+                where=where_filter,
+                include=["documents", "metadatas"],
+                limit=_ARTICLE_DIRECT_CHUNK_LIMIT,
+            )
+            documents = results.get("documents", []) or []
+            metadatas = results.get("metadatas", []) or []
+            docs = [
+                LCDocument(page_content=content, metadata=metadatas[i] or {})
+                for i, content in enumerate(documents)
+                if content
+            ]
+            return sorted(
+                docs,
+                key=lambda d: (
+                    int(d.metadata.get("parent_index") or 0),
+                    int(d.metadata.get("child_index") or 0),
+                ),
+            )
+        except Exception:
+            return []
+
+    def _article_aware_search(
+        self,
+        query: str,
+        scope_filter: Optional[dict],
+        k: int,
+    ) -> list[LCDocument]:
+        """Tìm kiếm thông minh: nếu query đề cập Điều cụ thể, lấy toàn bộ
+        chunks của Điều đó trực tiếp từ metadata thay vì dùng similarity search.
+
+        Lý do: similarity_search(k=8) có thể bỏ sót chunk của một Khoản nếu
+        nội dung khoản đó có độ tương đồng vector thấp với câu hỏi.
+        Truy vấn trực tiếp theo metadata đảm bảo lấy đủ mọi khoản.
+
+        Fallback: nếu không tìm thấy chunk nào qua metadata,
+        quay lại similarity search bình thường.
+        """
+        article_numbers = self._extract_article_numbers(query)
+        if not article_numbers:
+            return self._similarity_search(query, k, scope_filter)
+
+        direct_docs: list[LCDocument] = []
+        seen_content: set[str] = set()
+
+        for article_number in article_numbers:
+            article_filter = self._combine_with_scope(
+                scope_filter,
+                {"article_number": article_number},
+            )
+            for doc in self._get_article_chunks(article_filter):
+                if doc.page_content not in seen_content:
+                    direct_docs.append(doc)
+                    seen_content.add(doc.page_content)
+
+        if direct_docs:
+            # Bổ sung similarity search để có thêm context liên quan
+            for doc in self._similarity_search(query, k, scope_filter):
+                if doc.page_content not in seen_content:
+                    direct_docs.append(doc)
+                    seen_content.add(doc.page_content)
+            return direct_docs
+
+        # Fallback: không tìm thấy qua metadata (ví dụ: chưa có article_number)
+        import logging as _log
+        _log.info(
+            "Article-aware search found no direct chunks for %s, falling back to similarity",
+            article_numbers,
+        )
+        return self._similarity_search(query, k, scope_filter)
 
     def _merge_attached_docs(
         self,
