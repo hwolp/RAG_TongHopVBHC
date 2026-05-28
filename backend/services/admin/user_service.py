@@ -1,9 +1,9 @@
 from typing import Optional
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.user_repository import UserRepository
 from services.auth.auth_service import get_password_hash
 
 
@@ -12,15 +12,7 @@ def _role_to_str(role_value) -> str:
 
 
 def list_users(db: Session, search: str = ""):
-    query = db.query(models.User)
-    if search:
-        query = query.filter(
-            or_(
-                models.User.username.contains(search),
-                models.User.full_name.contains(search),
-            )
-        )
-    users = query.all()
+    users = UserRepository(db).list(search)
     return [
         {
             "id": user.id,
@@ -42,7 +34,8 @@ def create_user(
     department_id: Optional[int],
     password: str,
 ):
-    if db.query(models.User).filter(models.User.username == username).first():
+    users = UserRepository(db)
+    if users.get_by_username(username):
         return None
 
     role_enum = models.RoleEnum(role)
@@ -53,14 +46,12 @@ def create_user(
         department_id=department_id,
         hashed_password=get_password_hash(password),
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
+    return users.add(user)
 
 
 def update_user(db: Session, user_id: int, full_name: Optional[str], role: Optional[str], department_id: Optional[int]):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    users = UserRepository(db)
+    user = users.get(user_id)
     if not user:
         return None
 
@@ -71,27 +62,28 @@ def update_user(db: Session, user_id: int, full_name: Optional[str], role: Optio
     if department_id is not None:
         user.department_id = department_id
 
-    db.commit()
-    db.refresh(user)
+    users.commit()
+    users.refresh(user)
     return user
 
 
 def toggle_lock_user(db: Session, user_id: int):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    users = UserRepository(db)
+    user = users.get(user_id)
     if not user:
         return None
 
     user.is_locked = not user.is_locked
-    db.commit()
-    db.refresh(user)
+    users.commit()
+    users.refresh(user)
     return user
 
 
 def delete_user(db: Session, user_id: int) -> bool:
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    users = UserRepository(db)
+    user = users.get(user_id)
     if not user:
         return False
 
-    db.delete(user)
-    db.commit()
+    users.delete(user)
     return True

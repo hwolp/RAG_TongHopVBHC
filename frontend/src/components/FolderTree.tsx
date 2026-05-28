@@ -123,9 +123,9 @@ function DocRow({
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg group transition-colors text-sm
-        ${selected ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50 border border-transparent"}
-        ${attached ? "ring-1 ring-emerald-400" : ""}
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg group transition text-sm
+        ${selected ? "neo-inset text-[#006666]" : "border border-transparent hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.34),inset_-3px_-3px_8px_rgba(255,255,255,0.75)]"}
+        ${attached ? "ring-2 ring-emerald-400/60" : ""}
       `}
     >
       {selectMode !== "none" && (
@@ -223,7 +223,7 @@ function FolderSection({
     <div className="mb-1">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg font-semibold text-xs ${colorClass} ${bgClass} hover:opacity-90 transition`}
+        className={`w-full neo-button !min-h-0 justify-start px-3 py-2 font-semibold text-xs ${colorClass} ${bgClass} hover:opacity-95`}
       >
         {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         {icon}

@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.chat_repository import ChatRepository
+from repositories.document_repository import DocumentRepository
+from repositories.user_repository import UserRepository
 from services.chat.chat_service import ensure_chat_scope_allowed, normalize_chat_scope
 from services.chat.context_service import build_recent_chat_history, split_accessible_attachments_by_index_status
 from services.jobs import job_service
@@ -12,6 +15,9 @@ from services.jobs import job_service
 class JobHandler(ABC):
     def __init__(self, db: Session):
         self.db = db
+        self.documents = DocumentRepository(db)
+        self.chat = ChatRepository(db)
+        self.users = UserRepository(db)
 
     @abstractmethod
     def run(self, job: models.BackgroundJob) -> None:
@@ -22,7 +28,7 @@ class IndexDocumentJobHandler(JobHandler):
     def run(self, job: models.BackgroundJob) -> None:
         from rag_engine.chroma_manager import ChromaDBManager
 
-        doc = self.db.query(models.Document).filter(models.Document.id == job.document_id).first()
+        doc = self.documents.get(job.document_id)
         if not doc or doc.is_deleted:
             raise ValueError("Tai lieu khong ton tai hoac da bi xoa")
 
@@ -59,7 +65,7 @@ class IndexDocumentJobHandler(JobHandler):
             raise ValueError("Dinh dang file chua ho tro index")
 
         doc.is_indexed = True
-        self.db.commit()
+        self.documents.commit()
         job_service.mark_success(self.db, job, {"doc_id": doc.id, "chunks": chunks})
 
 
@@ -108,7 +114,7 @@ class ChatAnswerJobHandler(JobHandler):
         job_service.update_progress(self.db, job, 90)
         ai_message.content = answer
         ai_message.sources = json.dumps(sources, ensure_ascii=False)
-        self.db.commit()
+        self.chat.commit()
         job_service.mark_success(
             self.db,
             job,
@@ -126,15 +132,9 @@ class ChatAnswerJobHandler(JobHandler):
         job: models.BackgroundJob,
         user_id: int,
     ) -> tuple[models.User, models.ChatSession, models.ChatMessage]:
-        user_model = self.db.query(models.User).filter(models.User.id == user_id).first()
-        session = self.db.query(models.ChatSession).filter(
-            models.ChatSession.id == job.session_id,
-            models.ChatSession.user_id == user_id,
-        ).first()
-        ai_message = self.db.query(models.ChatMessage).filter(
-            models.ChatMessage.id == job.message_id,
-            models.ChatMessage.session_id == job.session_id,
-        ).first()
+        user_model = self.users.get(user_id)
+        session = self.chat.get_session(job.session_id, user_id)
+        ai_message = self.chat.get_message(job.message_id, job.session_id)
         if not user_model or not session or not ai_message:
             raise ValueError("Du lieu chat job khong hop le")
         return user_model, session, ai_message
@@ -149,7 +149,7 @@ class ChatAnswerJobHandler(JobHandler):
         answer = self.WAITING_ATTACHMENT_MESSAGE
         ai_message.content = answer
         ai_message.sources = "[]"
-        self.db.commit()
+        self.chat.commit()
         job_service.mark_success(
             self.db,
             job,

@@ -13,16 +13,16 @@ import { useAuth } from './hooks/useAuth';
 
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="h-screen flex items-center justify-center text-gray-400">Đang tải...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center text-slate-500">Đang tải...</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 const Layout = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-screen bg-neutral-100 overflow-hidden">
+  <div className="flex h-screen overflow-hidden">
     <Sidebar />
-    <main className="flex-1 overflow-y-auto">{children}</main>
+    <main className="flex-1 overflow-y-auto bg-transparent">{children}</main>
   </div>
 );
 

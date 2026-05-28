@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
-from database import models
+from repositories.user_repository import UserRepository
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -25,7 +25,7 @@ def create_access_token(data: dict) -> str:
 
 
 def authenticate_user(db: Session, username: str, password: str):
-    user = db.query(models.User).filter(models.User.username == username).first()
+    user = UserRepository(db).get_by_username(username)
     if not user or not verify_password(password, user.hashed_password):
         return None
     if user.is_locked:

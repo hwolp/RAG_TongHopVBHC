@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.sharing_repository import SharingRepository
 from utils.enum_utils import enum_value
 
 
@@ -12,12 +13,7 @@ def is_document_shared_with_user(db: Session, user: models.User, doc: models.Doc
     if user.role == models.RoleEnum.admin and user.department_id == 0:
         return True
 
-    share = db.query(models.SharedDocument).filter(
-        models.SharedDocument.document_id == doc.id,
-        (models.SharedDocument.shared_with_user_id == user.id)
-        | (models.SharedDocument.shared_with_dept_id == user.department_id),
-    ).first()
-    return share is not None
+    return SharingRepository(db).find_access_share(user, doc) is not None
 
 
 def can_access_document(db: Session, user: models.User | None, doc: models.Document | None) -> bool:

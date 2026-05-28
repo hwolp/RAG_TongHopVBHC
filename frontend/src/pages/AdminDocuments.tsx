@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import api from "../api";
+import api, { waitForJob } from "../api";
 import { FileText, RefreshCw, Search, Share2, Trash2, Upload, PencilLine, X } from "lucide-react";
 
 type Department = {
@@ -102,31 +102,21 @@ export default function AdminDocuments() {
     }
   };
 
-  const pollIndexJob = async (jobId: number) => {
+  const waitIndexJob = async (jobId: number) => {
     setJobMessage("Tài liệu đã tải lên, đang chờ worker index...");
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
-        if (r.data.status === "running") {
-          setJobMessage("Worker đang index tài liệu phòng ban...");
-        }
-        if (r.data.status === "success") {
-          setJobMessage("Index tài liệu phòng ban hoàn tất.");
-          await refreshAll();
-          return;
-        }
-        if (r.data.status === "failed") {
-          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
-          await refreshAll();
-          return;
-        }
-      } catch {
-        setJobMessage("Không thể kiểm tra trạng thái job index.");
-        return;
+    try {
+      const job = await waitForJob<JobResponse>(jobId);
+      if (job.status === "success") {
+        setJobMessage("Index tài liệu phòng ban hoàn tất.");
+      } else if (job.status === "failed") {
+        setJobMessage("Index thất bại: " + (job.error || "Không rõ lỗi."));
+      } else {
+        setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
       }
+      await refreshAll();
+    } catch {
+      setJobMessage("Không thể chờ trạng thái job index.");
     }
-    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
   };
 
   const handleUpload = async () => {
@@ -142,7 +132,7 @@ export default function AdminDocuments() {
       setSelectedFile(null);
       await refreshAll();
       if (response.data.job_id) {
-        void pollIndexJob(response.data.job_id);
+        void waitIndexJob(response.data.job_id);
       } else {
         setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
       }

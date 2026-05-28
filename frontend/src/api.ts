@@ -6,6 +6,16 @@ const api = axios.create({
   baseURL: apiBaseUrl,
 });
 
+export type JobStatus = "queued" | "running" | "success" | "failed";
+
+export type BaseJobResponse = {
+  id: number;
+  status: JobStatus;
+  progress?: number;
+  result?: unknown;
+  error?: string | null;
+};
+
 // Tự động gắn JWT token vào mọi request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
@@ -26,5 +36,15 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+export async function waitForJob<T extends BaseJobResponse = BaseJobResponse>(
+  jobId: number,
+  timeoutSeconds = 600,
+): Promise<T> {
+  const response = await api.get<T>(`/jobs/${jobId}/wait`, {
+    params: { timeout_seconds: timeoutSeconds },
+  });
+  return response.data;
+}
 
 export default api;

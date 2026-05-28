@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database import models
 from repositories.department_repository import DepartmentRepository
 from repositories.document_repository import DocumentRepository
+from repositories.sharing_repository import SharingRepository
 from repositories.user_repository import UserRepository
 from utils.errors import forbidden, not_found
 
@@ -13,6 +14,7 @@ class ShareService:
         self.users = UserRepository(db)
         self.documents = DocumentRepository(db)
         self.departments = DepartmentRepository(db)
+        self.shares = SharingRepository(db)
 
     def share_document_to_department(self, manager_user_id: int, doc_id: int, dept_id: int):
         _, doc = self._ensure_manager_can_share_doc(manager_user_id, doc_id)
@@ -23,14 +25,10 @@ class ShareService:
         return self._share_to_user(doc, manager_user_id, username)
 
     def revoke_share(self, manager_user_id: int, share_id: int):
-        share = self.db.query(models.SharedDocument).filter(
-            models.SharedDocument.id == share_id,
-            models.SharedDocument.shared_by == manager_user_id,
-        ).first()
+        share = self.shares.get_share_by_owner(share_id, manager_user_id)
         if not share:
             raise not_found("Chia se khong ton tai")
-        self.db.delete(share)
-        self.db.commit()
+        self.shares.delete(share)
         return {"status": "success"}
 
     def share_document_to_department_as_admin(self, admin_user_id: int, doc_id: int, dept_id: int):
@@ -45,32 +43,22 @@ class ShareService:
 
     def revoke_share_as_admin(self, admin_user_id: int, share_id: int):
         self._ensure_admin(admin_user_id)
-        share = self.db.query(models.SharedDocument).filter(models.SharedDocument.id == share_id).first()
+        share = self.shares.get_share(share_id)
         if not share:
             raise not_found("Chia se khong ton tai")
-        self.db.delete(share)
-        self.db.commit()
+        self.shares.delete(share)
         return {"status": "success"}
 
     def list_all_shares(self, search: str = ""):
-        query = self.db.query(models.SharedDocument).order_by(models.SharedDocument.created_at.desc())
-        if search:
-            query = query.join(models.Document, models.SharedDocument.document_id == models.Document.id).filter(
-                models.Document.filename.contains(search)
-            )
-        return [self._share_to_dict(share, include_shared_by_username=True) for share in query.all()]
+        return [self._share_to_dict(share, include_shared_by_username=True) for share in self.shares.list_all(search)]
 
     def list_manager_shares(self, manager_user_id: int):
-        shares = self.db.query(models.SharedDocument).filter(
-            models.SharedDocument.shared_by == manager_user_id,
-        ).order_by(models.SharedDocument.created_at.desc()).all()
+        shares = self.shares.list_by_owner(manager_user_id)
         return [self._share_to_dict(share, include_shared_by_username=False) for share in shares]
 
     def list_contributors(self, manager_user_id: int):
         manager = self._require_user(manager_user_id)
-        contributors = self.db.query(models.Contributor).filter(
-            models.Contributor.department_id == manager.department_id
-        ).order_by(models.Contributor.created_at.desc()).all()
+        contributors = self.shares.list_contributors_by_department(manager.department_id)
         return [
             {
                 "id": contributor.id,
@@ -83,10 +71,7 @@ class ShareService:
 
     def add_contributor(self, manager_user_id: int, target_user_id: int):
         manager = self._require_user(manager_user_id)
-        existing = self.db.query(models.Contributor).filter(
-            models.Contributor.user_id == target_user_id,
-            models.Contributor.department_id == manager.department_id,
-        ).first()
+        existing = self.shares.find_contributor(target_user_id, manager.department_id)
         if existing:
             return {"status": "exists", "id": existing.id}
 
@@ -95,21 +80,15 @@ class ShareService:
             granted_by=manager_user_id,
             department_id=manager.department_id,
         )
-        self.db.add(contributor)
-        self.db.commit()
-        self.db.refresh(contributor)
+        self.shares.add(contributor)
         return {"status": "success", "id": contributor.id}
 
     def remove_contributor(self, manager_user_id: int, contrib_id: int):
         manager = self._require_user(manager_user_id)
-        contributor = self.db.query(models.Contributor).filter(
-            models.Contributor.id == contrib_id,
-            models.Contributor.department_id == manager.department_id,
-        ).first()
+        contributor = self.shares.get_contributor(contrib_id, manager.department_id)
         if not contributor:
             raise not_found("Contributor not found")
-        self.db.delete(contributor)
-        self.db.commit()
+        self.shares.delete(contributor)
         return {"status": "success"}
 
     def _share_to_department(
@@ -121,26 +100,18 @@ class ShareService:
     ):
         if validate_target and not self.departments.get(dept_id):
             raise not_found("Phong ban khong ton tai")
-        existing = self.db.query(models.SharedDocument).filter(
-            models.SharedDocument.document_id == doc.id,
-            models.SharedDocument.shared_with_dept_id == dept_id,
-        ).first()
+        existing = self.shares.find_share_for_department(doc.id, dept_id)
         if existing:
             return {"status": "exists", "share_id": existing.id}
         share = models.SharedDocument(document_id=doc.id, shared_with_dept_id=dept_id, shared_by=shared_by)
-        self.db.add(share)
-        self.db.commit()
-        self.db.refresh(share)
+        self.shares.add(share)
         return {"status": "success", "share_id": share.id}
 
     def _share_to_user(self, doc: models.Document, shared_by: int, username: str):
         target_user = self.users.get_by_username(username)
         if not target_user:
             raise not_found("Khong tim thay tai khoan duoc chia se")
-        existing = self.db.query(models.SharedDocument).filter(
-            models.SharedDocument.document_id == doc.id,
-            models.SharedDocument.shared_with_user_id == target_user.id,
-        ).first()
+        existing = self.shares.find_share_for_user(doc.id, target_user.id)
         if existing:
             return {"status": "exists", "share_id": existing.id}
         share = models.SharedDocument(
@@ -149,9 +120,7 @@ class ShareService:
             shared_with_user_id=target_user.id,
             shared_by=shared_by,
         )
-        self.db.add(share)
-        self.db.commit()
-        self.db.refresh(share)
+        self.shares.add(share)
         return {
             "status": "success",
             "share_id": share.id,
@@ -183,11 +152,7 @@ class ShareService:
 
     def _ensure_manager_can_share_doc(self, manager_user_id: int, doc_id: int):
         manager = self._require_user(manager_user_id)
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.department,
-            models.Document.department_id == manager.department_id,
-        ).first()
+        doc = self.documents.get_department_active(doc_id, manager.department_id)
         if not doc:
             raise not_found("Tai lieu khong ton tai hoac khong thuoc phong ban cua ban")
         return manager, doc
@@ -199,10 +164,7 @@ class ShareService:
         return admin_user
 
     def _require_department_doc(self, doc_id: int) -> models.Document:
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.department,
-        ).first()
+        doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.department, include_deleted=True)
         if not doc:
             raise not_found("Tai lieu phong ban khong ton tai")
         return doc

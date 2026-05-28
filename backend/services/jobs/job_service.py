@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import time
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from config import REDIS_URL, RQ_QUEUE_NAME
 from database import models
+from repositories.job_repository import BackgroundJobRepository
 from utils.time_utils import utc_now
 
 
@@ -17,6 +20,14 @@ STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
+TERMINAL_STATUSES = {STATUS_SUCCESS, STATUS_FAILED}
+
+
+def _env_enabled(name: str, default: bool = True) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _json_dumps(value: Any) -> str:
@@ -55,11 +66,19 @@ def enqueue_job(job_id: int) -> bool:
         from redis import Redis
         from rq import Queue
 
-        queue = Queue(RQ_QUEUE_NAME, connection=Redis.from_url(REDIS_URL))
+        redis_connection = Redis.from_url(REDIS_URL, socket_connect_timeout=1, socket_timeout=1)
+        queue = Queue(RQ_QUEUE_NAME, connection=redis_connection)
         queue.enqueue("services.jobs.worker.run_job", job_id, job_timeout="30m")
         return True
     except Exception as exc:
-        logging.warning("Could not enqueue background job %s: %s", job_id, exc)
+        if _env_enabled("ENABLE_INTERNAL_JOB_WORKER", True):
+            logging.info(
+                "Could not enqueue background job %s to Redis; internal worker will pick it up: %s",
+                job_id,
+                exc,
+            )
+        else:
+            logging.warning("Could not enqueue background job %s: %s", job_id, exc)
         return False
 
 
@@ -83,9 +102,7 @@ def create_job(
         message_id=message_id,
         payload=_json_dumps(payload or {}),
     )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+    BackgroundJobRepository(db).add(job)
     if auto_enqueue:
         enqueue_job(job.id)
     return job
@@ -113,27 +130,11 @@ def mark_running(db: Session, job: models.BackgroundJob, progress: int = 5) -> N
     job.status = STATUS_RUNNING
     job.progress = progress
     job.error = None
-    db.commit()
+    BackgroundJobRepository(db).commit()
 
 
 def claim_for_run(db: Session, job_id: int) -> models.BackgroundJob | None:
-    now = utc_now()
-    claimed = db.query(models.BackgroundJob).filter(
-        models.BackgroundJob.id == job_id,
-        models.BackgroundJob.status == STATUS_QUEUED,
-    ).update(
-        {
-            "status": STATUS_RUNNING,
-            "progress": 5,
-            "error": None,
-            "updated_at": now,
-        },
-        synchronize_session=False,
-    )
-    db.commit()
-    if not claimed:
-        return None
-    return db.query(models.BackgroundJob).filter(models.BackgroundJob.id == job_id).first()
+    return BackgroundJobRepository(db).claim_for_run(job_id, STATUS_QUEUED, STATUS_RUNNING)
 
 
 def update_progress(db: Session, job: models.BackgroundJob, progress: int, result: dict | None = None) -> None:
@@ -141,7 +142,7 @@ def update_progress(db: Session, job: models.BackgroundJob, progress: int, resul
     job.updated_at = utc_now()
     if result is not None:
         job.result = _json_dumps(result)
-    db.commit()
+    BackgroundJobRepository(db).commit()
 
 
 def mark_success(db: Session, job: models.BackgroundJob, result: dict | None = None) -> None:
@@ -152,7 +153,7 @@ def mark_success(db: Session, job: models.BackgroundJob, result: dict | None = N
     job.result = _json_dumps(result or {})
     job.updated_at = now
     job.finished_at = now
-    db.commit()
+    BackgroundJobRepository(db).commit()
 
 
 def mark_failed(db: Session, job: models.BackgroundJob, error: str) -> None:
@@ -162,16 +163,40 @@ def mark_failed(db: Session, job: models.BackgroundJob, error: str) -> None:
     job.error = error
     job.updated_at = now
     job.finished_at = now
-    db.commit()
+    BackgroundJobRepository(db).commit()
 
 
 def get_job(db: Session, job_id: int, user: dict) -> dict:
-    job = db.query(models.BackgroundJob).filter(models.BackgroundJob.id == job_id).first()
+    job = _require_visible_job(db, job_id, user)
+    return serialize_job(job)
+
+
+def wait_for_job(
+    db: Session,
+    job_id: int,
+    user: dict,
+    timeout_seconds: int = 600,
+    interval_seconds: float = 1.0,
+) -> dict:
+    deadline = time.monotonic() + max(1, min(timeout_seconds, 1800))
+    safe_interval = max(0.2, min(interval_seconds, 5.0))
+
+    while True:
+        db.rollback()
+        db.expire_all()
+        job = _require_visible_job(db, job_id, user)
+        if job.status in TERMINAL_STATUSES or time.monotonic() >= deadline:
+            return serialize_job(job)
+        time.sleep(safe_interval)
+
+
+def _require_visible_job(db: Session, job_id: int, user: dict) -> models.BackgroundJob:
+    job = BackgroundJobRepository(db).get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job khong ton tai")
     if user.get("role") != "admin" and job.created_by != user.get("id"):
         raise HTTPException(status_code=403, detail="Khong co quyen xem job nay")
-    return serialize_job(job)
+    return job
 
 
 def list_jobs(
@@ -180,14 +205,7 @@ def list_jobs(
     status: str | None = None,
     job_type: str | None = None,
 ) -> list[dict]:
-    query = db.query(models.BackgroundJob)
-    if user.get("role") != "admin":
-        query = query.filter(models.BackgroundJob.created_by == user.get("id"))
-    if status:
-        query = query.filter(models.BackgroundJob.status == status)
-    if job_type:
-        query = query.filter(models.BackgroundJob.type == job_type)
-    jobs = query.order_by(models.BackgroundJob.created_at.desc()).limit(100).all()
+    jobs = BackgroundJobRepository(db).list_for_user(user, status, job_type)
     return [serialize_job(job) for job in jobs]
 
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "../api";
+import api, { waitForJob } from "../api";
 import { Database, RefreshCw, Trash2 } from "lucide-react";
 
 export default function AdminSystem() {
@@ -31,33 +31,28 @@ export default function AdminSystem() {
       setLoading(false);
     }
   };
-  const pollIndexJob = async (jobId: number) => {
+  const waitIndexJob = async (jobId: number) => {
     setJobMessage("Tài liệu SQP đã được duyệt, đang chờ re-index...");
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-        const r = await api.get(`/jobs/${jobId}`);
-        if (r.data.status === "running") setJobMessage("Worker đang re-index tài liệu SQP...");
-        if (r.data.status === "success") {
-          setJobMessage("Re-index tài liệu SQP hoàn tất.");
-          await fetchStatus();
-          return;
-        }
-        if (r.data.status === "failed") {
-          setJobMessage("Re-index thất bại: " + (r.data.error || "Không rõ lỗi."));
-          return;
-        }
-      } catch {
-        setJobMessage("Không thể kiểm tra trạng thái job index.");
+    try {
+      const job = await waitForJob(jobId);
+      if (job.status === "success") {
+        setJobMessage("Re-index tài liệu SQP hoàn tất.");
+        await fetchStatus();
         return;
       }
+      if (job.status === "failed") {
+        setJobMessage("Re-index thất bại: " + (job.error || "Không rõ lỗi."));
+        return;
+      }
+      setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
+    } catch {
+      setJobMessage("Không thể chờ trạng thái job index.");
     }
-    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
   };
   const handleApprove = async (id: number) => {
     const r = await api.post(`/admin/sqp/approve/${id}`);
     await fetchProposals();
-    if (r.data.job_id) void pollIndexJob(r.data.job_id);
+    if (r.data.job_id) void waitIndexJob(r.data.job_id);
   };
   const handleReject = async (id: number) => { await api.post(`/admin/sqp/reject/${id}`); fetchProposals(); };
   const handleAddTag = async () => { if (!newTag) return; await api.post(`/admin/tags?name=${newTag}`); setNewTag(""); fetchTags(); };

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from database import models
 from repositories.chat_repository import ChatRepository
+from repositories.job_repository import BackgroundJobRepository
 from repositories.user_repository import UserRepository
 from services.chat.context_service import accessible_attachment_ids, build_recent_chat_history
 from services.chat.models import ChatAnswerResult, GeneratedAnswer, RetrievedContext
@@ -78,11 +79,7 @@ class ChatSessionService:
     ):
         self._require_session(user_id, session_id)
         safe_limit = max(1, min(limit, 50))
-        query = self.db.query(models.ChatMessage).filter(models.ChatMessage.session_id == session_id)
-        if before_id is not None:
-            query = query.filter(models.ChatMessage.id < before_id)
-
-        rows = query.order_by(models.ChatMessage.id.desc()).limit(safe_limit + 1).all()
+        rows = self.chat.list_messages_before(session_id, safe_limit + 1, before_id)
         has_more = len(rows) > safe_limit
         selected = rows[:safe_limit]
         selected.reverse()
@@ -114,13 +111,12 @@ class ChatSessionService:
     def rename_session(self, user_id: int, session_id: int, title: str):
         session = self._require_session(user_id, session_id)
         session.title = title
-        self.db.commit()
+        self.chat.commit()
         return {"status": "success"}
 
     def delete_session(self, user_id: int, session_id: int):
         session = self._require_session(user_id, session_id)
-        self.db.delete(session)
-        self.db.commit()
+        self.chat.delete(session)
         return {"status": "success"}
 
     def _require_session(self, user_id: int, session_id: int) -> models.ChatSession:
@@ -132,14 +128,11 @@ class ChatSessionService:
     def _active_jobs_by_message(self, message_ids: list[int]) -> dict[int, models.BackgroundJob]:
         if not message_ids:
             return {}
-        active_jobs = self.db.query(models.BackgroundJob).filter(
-            models.BackgroundJob.message_id.in_(message_ids),
-            models.BackgroundJob.type == job_service.JOB_TYPE_CHAT_ANSWER,
-            models.BackgroundJob.status.in_([
-                job_service.STATUS_QUEUED,
-                job_service.STATUS_RUNNING,
-            ]),
-        ).order_by(models.BackgroundJob.created_at.desc()).all()
+        active_jobs = BackgroundJobRepository(self.db).list_active_by_message(
+            message_ids,
+            job_service.JOB_TYPE_CHAT_ANSWER,
+            [job_service.STATUS_QUEUED, job_service.STATUS_RUNNING],
+        )
         result = {}
         for job in active_jobs:
             result.setdefault(job.message_id, job)
@@ -150,6 +143,7 @@ class ChatAnswerService:
     def __init__(self, db: Session):
         self.db = db
         self.users = UserRepository(db)
+        self.chat = ChatRepository(db)
         self.sessions = ChatSessionService(db)
 
     def ask_ai(self, user_id: int, question: str, scope: str = "personal", session_id: Optional[int] = None):
@@ -169,8 +163,7 @@ class ChatAnswerService:
             content=generated.answer,
             sources=json.dumps(generated.sources, ensure_ascii=False),
         )
-        self.db.add_all([user_message, ai_message])
-        self.db.commit()
+        self.chat.add_many([user_message, ai_message])
 
         result = ChatAnswerResult(
             answer=generated.answer,
@@ -201,10 +194,9 @@ class ChatAnswerService:
             content="Đang xử lý câu trả lời...",
             sources="[]",
         )
-        self.db.add_all([user_message, ai_message])
-        self.db.commit()
-        self.db.refresh(user_message)
-        self.db.refresh(ai_message)
+        self.chat.add_many([user_message, ai_message])
+        self.chat.refresh(user_message)
+        self.chat.refresh(ai_message)
 
         job = job_service.create_job(
             db=self.db,
@@ -275,17 +267,14 @@ class ChatPromptService:
 
     def create_saved_prompt(self, user_id: int, content: str):
         prompt = models.SavedPrompt(user_id=user_id, content=content)
-        self.db.add(prompt)
-        self.db.commit()
-        self.db.refresh(prompt)
+        self.chat.add(prompt)
         return {"status": "success", "id": prompt.id}
 
     def delete_saved_prompt(self, user_id: int, prompt_id: int):
         prompt = self.chat.get_saved_prompt(user_id, prompt_id)
         if not prompt:
             raise not_found("Prompt not found")
-        self.db.delete(prompt)
-        self.db.commit()
+        self.chat.delete(prompt)
         return {"status": "success"}
 
     def get_message_citations(self, user_id: int, message_id: int):

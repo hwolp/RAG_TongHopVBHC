@@ -11,7 +11,7 @@ from rag_engine.models import DocumentIndexMetadata
 
 try:
     import pytesseract
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
     TESSERACT_AVAILABLE = True
 except ImportError:
@@ -32,6 +32,11 @@ _ADMIN_DOC_PATTERNS = [
 ]
 
 _NORMAL_SEPARATORS = ["\n\n", "\n", ".", " "]
+_OCR_LANG = "vie+eng"
+_OCR_CONFIGS = [
+    "--oem 1 --psm 6 -c preserve_interword_spaces=1",
+    "--oem 1 --psm 4 -c preserve_interword_spaces=1",
+]
 
 
 def _ocr_page_to_text(page) -> str:
@@ -41,19 +46,64 @@ def _ocr_page_to_text(page) -> str:
 
     try:
         pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        matrix = fitz.Matrix(2, 2)
+        matrix = fitz.Matrix(3, 3)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
         img = Image.open(io.BytesIO(pix.tobytes("ppm")))
-        text = pytesseract.image_to_string(img, lang="vie", config=r"--oem 3 --psm 6")
-        extracted_text = text.strip()
+        processed_img = _prepare_ocr_image(img)
+        extracted_text, confidence = _best_ocr_result(processed_img)
         if extracted_text:
-            logging.info("Page %s OCR success: %s chars extracted", page.number, len(extracted_text))
+            logging.info(
+                "Page %s OCR success: %s chars extracted, confidence %.1f",
+                page.number,
+                len(extracted_text),
+                confidence,
+            )
         else:
             logging.warning("Page %s OCR completed but returned no text", page.number)
         return extracted_text
     except Exception as exc:
         logging.error("OCR failed at page %s: %s", page.number, exc)
         return ""
+
+
+def _prepare_ocr_image(image: Image.Image) -> Image.Image:
+    """Improve Vietnamese OCR by normalizing scanned PDF page images."""
+    gray = ImageOps.grayscale(image)
+    gray = ImageOps.autocontrast(gray)
+    gray = ImageEnhance.Contrast(gray).enhance(1.7)
+    gray = ImageEnhance.Sharpness(gray).enhance(1.4)
+    gray = gray.filter(ImageFilter.MedianFilter(size=3))
+    return gray.point(lambda pixel: 255 if pixel > 168 else 0)
+
+
+def _best_ocr_result(image: Image.Image) -> tuple[str, float]:
+    best_text = ""
+    best_confidence = -1.0
+
+    for config in _OCR_CONFIGS:
+        data = pytesseract.image_to_data(
+            image,
+            lang=_OCR_LANG,
+            config=config,
+            output_type=pytesseract.Output.DICT,
+        )
+        confidences = []
+        for confidence in data.get("conf", []):
+            try:
+                numeric_confidence = float(confidence)
+            except (TypeError, ValueError):
+                continue
+            if numeric_confidence >= 0:
+                confidences.append(numeric_confidence)
+
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        text = pytesseract.image_to_string(image, lang=_OCR_LANG, config=config).strip()
+        score = avg_confidence + min(len(text), 4000) / 4000
+        if text and score > best_confidence:
+            best_text = text
+            best_confidence = score
+
+    return best_text, best_confidence
 
 
 def _is_page_scanned(page_text: str, min_text_length: int = 500) -> bool:

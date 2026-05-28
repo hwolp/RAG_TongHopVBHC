@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 
 from database import models
@@ -14,6 +16,52 @@ class DocumentRepository:
         return (
             self.db.query(models.Document)
             .filter(models.Document.id == doc_id, models.Document.is_deleted == False)
+            .first()
+        )
+
+    def get_by_scope(self, doc_id: int, scope: models.ScopeEnum, include_deleted: bool = False) -> models.Document | None:
+        query = self.db.query(models.Document).filter(
+            models.Document.id == doc_id,
+            models.Document.scope == scope,
+        )
+        if not include_deleted:
+            query = query.filter(models.Document.is_deleted == False)
+        return query.first()
+
+    def get_owned_personal_active(self, doc_id: int, owner_id: int) -> models.Document | None:
+        return (
+            self.db.query(models.Document)
+            .filter(
+                models.Document.id == doc_id,
+                models.Document.owner_id == owner_id,
+                models.Document.scope == models.ScopeEnum.personal,
+                models.Document.is_deleted == False,
+            )
+            .first()
+        )
+
+    def get_department_active(
+        self,
+        doc_id: int,
+        department_id: int | None = None,
+    ) -> models.Document | None:
+        query = self.db.query(models.Document).filter(
+            models.Document.id == doc_id,
+            models.Document.scope == models.ScopeEnum.department,
+            models.Document.is_deleted == False,
+        )
+        if department_id is not None:
+            query = query.filter(models.Document.department_id == department_id)
+        return query.first()
+
+    def get_session_document(self, doc_id: int, owner_id: int, session_id: int) -> models.Document | None:
+        return (
+            self.db.query(models.Document)
+            .filter(
+                models.Document.id == doc_id,
+                models.Document.chat_session_id == session_id,
+                models.Document.owner_id == owner_id,
+            )
             .first()
         )
 
@@ -41,6 +89,15 @@ class DocumentRepository:
             models.Document.is_deleted == False,
         )
         return self._apply_search(query, search).order_by(models.Document.uploaded_at.desc()).all()
+
+    def list_unindexed(self) -> list[models.Document]:
+        return self.db.query(models.Document).filter(models.Document.is_indexed == False).all()
+
+    def list_file_paths(self) -> list[str]:
+        return [row[0] for row in self.db.query(models.Document.file_path).all()]
+
+    def count_by_department(self, department_id: int) -> int:
+        return self.db.query(models.Document).filter(models.Document.department_id == department_id).count()
 
     def list_deleted_for_user(self, user: models.User) -> list[models.Document]:
         query = self.db.query(models.Document).filter(models.Document.is_deleted == True)
@@ -87,11 +144,25 @@ class DocumentRepository:
             is not None
         )
 
+    def list_version_paths(self) -> list[str]:
+        return [row[0] for row in self.db.query(models.DocumentVersion.file_path).all()]
+
+    def add_version(self, version: models.DocumentVersion) -> models.DocumentVersion:
+        self.db.add(version)
+        return version
+
     def add(self, doc: models.Document) -> models.Document:
         self.db.add(doc)
         self.db.commit()
         self.db.refresh(doc)
         return doc
+
+    def add_pending(self, doc: models.Document) -> models.Document:
+        self.db.add(doc)
+        return doc
+
+    def refresh(self, item) -> None:
+        self.db.refresh(item)
 
     def commit(self) -> None:
         self.db.commit()
@@ -105,4 +176,3 @@ class DocumentRepository:
         if search:
             return query.filter(models.Document.filename.contains(search))
         return query
-

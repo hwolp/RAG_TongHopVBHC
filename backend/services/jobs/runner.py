@@ -4,10 +4,8 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from sqlalchemy import case
-
-from database import models
 from database.db_config import SessionLocal
+from repositories.job_repository import BackgroundJobRepository
 
 
 _started = False
@@ -24,17 +22,7 @@ def _env_enabled(name: str, default: bool = True) -> bool:
 def _queued_job_ids(limit: int, exclude_ids: set[int] | None = None) -> list[int]:
     db = SessionLocal()
     try:
-        query = db.query(models.BackgroundJob.id).filter(
-            models.BackgroundJob.status == "queued",
-        )
-        if exclude_ids:
-            query = query.filter(~models.BackgroundJob.id.in_(exclude_ids))
-        priority = case(
-            (models.BackgroundJob.type == "chat_answer", 0),
-            else_=1,
-        )
-        rows = query.order_by(priority, models.BackgroundJob.created_at.asc()).limit(limit).all()
-        return [row[0] for row in rows]
+        return BackgroundJobRepository(db).queued_job_ids(limit, exclude_ids)
     finally:
         db.close()
 

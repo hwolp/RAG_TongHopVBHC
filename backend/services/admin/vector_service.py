@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from config import CHROMA_PERSIST_DIR
-from database import models
+from repositories.document_repository import DocumentRepository
 
 
 class VectorAdminService:
@@ -25,7 +25,8 @@ class VectorAdminService:
         manager = ChromaDBManager()
         manager.admin_clear_db()
 
-        docs = db.query(models.Document).filter(models.Document.is_indexed == False).all()
+        documents = DocumentRepository(db)
+        docs = documents.list_unindexed()
         total_chunks = 0
         for doc in docs:
             if not doc.file_path.lower().endswith(".pdf"):
@@ -42,6 +43,5 @@ class VectorAdminService:
             doc.is_indexed = True
             total_chunks += chunks
 
-        db.commit()
+        documents.commit()
         return {"status": "success", "reindexed_docs": len(docs), "total_chunks": total_chunks}
-

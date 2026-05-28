@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import api from "../api";
+import api, { waitForJob } from "../api";
 import {
   Send, Bot, User, Plus, Trash2, MessageSquare,
   FolderOpen, X, Upload, RefreshCw, Pencil, Check,
@@ -75,7 +75,7 @@ export default function Chat() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollingJobsRef = useRef<Set<number>>(new Set());
+  const waitingJobsRef = useRef<Set<number>>(new Set());
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -119,7 +119,7 @@ export default function Chat() {
       setNextBeforeId(page.next_before_id ?? null);
       (page.items || []).forEach(message => {
         if (message.sender === "ai" && message.job_id && message.job_status !== "success" && message.job_status !== "failed") {
-          void pollChatJob(message.job_id, message.id, id);
+          void waitChatJob(message.job_id, message.id, id);
         }
       });
       requestAnimationFrame(scrollToBottom);
@@ -153,95 +153,60 @@ export default function Chat() {
     if (el.scrollTop <= 80) loadOlderMessages();
   };
 
-  const pollChatJob = async (jobId: number, aiMessageId: number, sessionId: number) => {
-    if (pollingJobsRef.current.has(jobId)) return;
-    pollingJobsRef.current.add(jobId);
-    let lastStatus: JobResponse["status"] = "queued";
-    let lastProgress = 0;
-    let transientErrors = 0;
-    const maxAttempts = 240;
+  const waitChatJob = async (jobId: number, aiMessageId: number, sessionId: number) => {
+    if (waitingJobsRef.current.has(jobId)) return;
+    waitingJobsRef.current.add(jobId);
     try {
-      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const delay = attempt < 20 ? 1500 : attempt < 80 ? 3000 : 5000;
-        await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 300 : delay));
-        try {
-          const r = await api.get<JobResponse>(`/jobs/${jobId}`);
-          const job = r.data;
-          lastStatus = job.status;
-          lastProgress = job.progress || 0;
-          transientErrors = 0;
-          if (job.status === "success") {
-            setMessages(prev => prev.map(message => (
-              message.id === aiMessageId
-                ? {
-                    ...message,
-                    content: job.result?.answer || "Đã xử lý xong nhưng không có nội dung trả lời.",
-                    sources: JSON.stringify(job.result?.sources || []),
-                  }
-                : message
-            )));
-            await fetchSessionDocs(sessionId);
-            await fetchSessions();
-            requestAnimationFrame(scrollToBottom);
-            return;
-          }
-          if (job.status === "failed") {
-            setMessages(prev => prev.map(message => (
-              message.id === aiMessageId
-                ? { ...message, content: `⚠️ Xử lý AI thất bại.\n\n${job.error || "Không rõ lỗi."}` }
-                : message
-            )));
-            return;
-          }
-          if (attempt === 0 || attempt % 4 === 0) {
-            const statusText = job.status === "running"
-              ? `AI đang xử lý câu trả lời... (${job.progress || 0}%)`
-              : "Câu hỏi đang chờ worker xử lý...";
-            setMessages(prev => prev.map(message => (
-              message.id === aiMessageId && message.content.startsWith("⏳")
-                ? { ...message, content: `⏳ ${statusText}` }
-                : message
-            )));
-          }
-        } catch (err: any) {
-          transientErrors += 1;
-          if (transientErrors >= 5) {
-            setMessages(prev => prev.map(message => (
-              message.id === aiMessageId
-                ? { ...message, content: "⚠️ Không thể kiểm tra trạng thái job: " + (err.response?.data?.detail || err.message) }
-                : message
-            )));
-            return;
-          }
-        }
+      const job = await waitForJob<JobResponse>(jobId);
+      if (job.status === "success") {
+        setMessages(prev => prev.map(message => (
+          message.id === aiMessageId
+            ? {
+                ...message,
+                content: job.result?.answer || "Đã xử lý xong nhưng không có nội dung trả lời.",
+                sources: JSON.stringify(job.result?.sources || []),
+              }
+            : message
+        )));
+        await fetchSessionDocs(sessionId);
+        await fetchSessions();
+        requestAnimationFrame(scrollToBottom);
+        return;
       }
-
-      const timeoutMessage = lastStatus === "running"
-        ? `⏳ AI vẫn đang xử lý (${lastProgress}%). Vui lòng tải lại phiên sau ít phút nếu câu trả lời chưa hiện.`
-        : "⏳ Job vẫn đang chờ xử lý nền. Vui lòng kiểm tra backend hoặc tải lại phiên sau ít phút.";
+      if (job.status === "failed") {
+        setMessages(prev => prev.map(message => (
+          message.id === aiMessageId
+            ? { ...message, content: `⚠️ Xử lý AI thất bại.\n\n${job.error || "Không rõ lỗi."}` }
+            : message
+        )));
+        return;
+      }
+      const timeoutMessage = job.status === "running"
+        ? `⏳ AI vẫn đang xử lý (${job.progress || 0}%). Vui lòng tải lại phiên sau ít phút nếu câu trả lời chưa hiện.`
+        : "⏳ Job vẫn đang chờ xử lý nền. Vui lòng kiểm tra backend worker.";
       setMessages(prev => prev.map(message => (
         message.id === aiMessageId
           ? { ...message, content: timeoutMessage }
           : message
       )));
+    } catch (err: any) {
+      setMessages(prev => prev.map(message => (
+        message.id === aiMessageId
+          ? { ...message, content: "⚠️ Không thể chờ trạng thái job: " + (err.response?.data?.detail || err.message) }
+          : message
+      )));
     } finally {
-      pollingJobsRef.current.delete(jobId);
+      waitingJobsRef.current.delete(jobId);
     }
   };
 
-  const pollIndexJob = async (jobId: number, sessionId: number) => {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
-        if (r.data.status === "success" || r.data.status === "failed") {
-          await fetchSessionDocs(sessionId);
-          await fetchAttachments(sessionId);
-          return;
-        }
-      } catch {
-        return;
-      }
+  const waitIndexJob = async (jobId: number, sessionId: number) => {
+    try {
+      await waitForJob<JobResponse>(jobId);
+      await fetchSessionDocs(sessionId);
+      await fetchAttachments(sessionId);
+    } catch {
+      return;
     }
   };
 
@@ -280,7 +245,7 @@ export default function Chat() {
       fetchSessions();
       setLoading(false);
       if (r.data.job_id) {
-        void pollChatJob(r.data.job_id, aiMessageId, sessionId);
+        void waitChatJob(r.data.job_id, aiMessageId, sessionId);
       }
     } catch (err: any) {
       setMessages(prev => [...prev, {
@@ -319,7 +284,7 @@ export default function Chat() {
       // Fetch updated session documents
       if (activeSession) {
         await fetchSessionDocs(activeSession);
-        if (r.data.job_id) void pollIndexJob(r.data.job_id, activeSession);
+        if (r.data.job_id) void waitIndexJob(r.data.job_id, activeSession);
       }
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
@@ -369,7 +334,7 @@ export default function Chat() {
           ? `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nTài liệu đang được index, AI sẽ dùng được nội dung sau khi trạng thái chuyển sang Đã index.`
           : `📎 Đã đính kèm **"${doc.filename}"** vào phiên chat.\nAI sẽ dùng nội dung tài liệu này khi trả lời câu hỏi.`,
       }]);
-      if (r.data.index_job_id) void pollIndexJob(r.data.index_job_id, activeSession);
+      if (r.data.index_job_id) void waitIndexJob(r.data.index_job_id, activeSession);
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
       alert("Lỗi đính kèm: " + (err.response?.data?.detail || err.message));
@@ -452,9 +417,9 @@ export default function Chat() {
   return (
     <div className="flex h-full">
       {/* ── Sidebar Sessions ───────────────────────────────────────────────── */}
-      <div className="w-60 bg-white border-r flex flex-col flex-shrink-0">
-        <div className="p-3 border-b">
-          <button onClick={handleNewSession} className="w-full flex items-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition">
+      <div className="w-64 bg-[#e7e5e4] border-r border-white/60 flex flex-col flex-shrink-0">
+        <div className="p-3 border-b border-white/60">
+          <button onClick={handleNewSession} className="neo-button neo-button-primary w-full">
             <Plus className="w-4 h-4" /> Phiên hội thoại mới
           </button>
         </div>
@@ -463,7 +428,7 @@ export default function Chat() {
           {sessions.map((s: any) => (
             <div key={s.id}
               className={`flex items-center px-2 py-1.5 rounded-lg cursor-pointer text-sm group transition
-                ${activeSession === s.id ? "bg-blue-50 text-blue-700 border border-blue-200" : "hover:bg-gray-50"}`}
+                ${activeSession === s.id ? "neo-inset text-[#006666]" : "hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.34),inset_-3px_-3px_8px_rgba(255,255,255,0.75)]"}`}
               onClick={() => loadSession(s.id)}
             >
               <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 mr-2 mt-0.5" />
@@ -473,7 +438,7 @@ export default function Chat() {
                     value={renameInput} autoFocus
                     onChange={e => setRenameInput(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") commitRename(s.id); if (e.key === "Escape") setRenamingId(null); }}
-                    className="flex-1 min-w-0 text-xs border rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
+                    className="neo-input flex-1 min-w-0 !py-0.5 !px-1 text-xs"
                   />
                   <button onClick={() => commitRename(s.id)} className="text-blue-500"><Check className="w-3 h-3" /></button>
                 </div>
@@ -496,21 +461,21 @@ export default function Chat() {
       {/* ── Main Chat Area ─────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
-        <div className="p-3 border-b bg-white flex items-center gap-3 flex-wrap">
-          <span className="text-xs font-semibold text-gray-500">Phạm vi:</span>
+        <div className="p-3 border-b border-white/60 bg-[#e7e5e4]/80 flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-semibold text-slate-500">Phạm vi:</span>
           {[
             { key: "personal", label: "Cá nhân" },
             { key: "department", label: "Phòng ban" },
             { key: "company", label: "Toàn công ty" },
           ].map(s => (
             <button key={s.key} onClick={() => setScope(s.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition
-                ${scope === s.key ? "bg-blue-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              className={`neo-button !min-h-0 rounded-full px-3 py-1.5 text-xs
+                ${scope === s.key ? "neo-button-primary" : ""}`}>
               {s.label}
             </button>
           ))}
 
-          {activeSession && <span className="ml-auto text-xs text-gray-400">Session #{activeSession}</span>}
+          {activeSession && <span className="ml-auto text-xs text-slate-500">Session #{activeSession}</span>}
 
           {/* Hidden file input for upload */}
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleUploadForSession} />
@@ -520,7 +485,7 @@ export default function Chat() {
             onClick={() => fileInputRef.current?.click()}
             disabled={!activeSession || uploading}
             title="Tải file mới lên session"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition border border-emerald-200"
+            className="neo-button !min-h-0 px-3 py-1.5 text-xs text-emerald-700"
           >
             <Upload className="w-3.5 h-3.5" />
             {uploading ? "Đang tải..." : "Upload file"}
@@ -531,10 +496,10 @@ export default function Chat() {
             onClick={showPicker ? () => setShowPicker(false) : openPicker}
             disabled={!activeSession}
             title="Chọn file từ thư viện"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition border disabled:opacity-50
+            className={`neo-button !min-h-0 px-3 py-1.5 text-xs disabled:opacity-50
               ${showPicker
-                ? "bg-blue-600 text-white border-blue-600"
-                : "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                ? "neo-button-primary"
+                : "text-[#006666]"
               }`}
           >
             <FolderOpen className="w-3.5 h-3.5" />
@@ -549,10 +514,10 @@ export default function Chat() {
 
         {/* Attached docs chips */}
         {attachedDocs.length > 0 && (
-          <div className="px-4 py-2 bg-emerald-50 border-b flex flex-wrap gap-2 items-center">
+          <div className="px-4 py-2 bg-emerald-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
             <span className="text-xs text-emerald-700 font-semibold flex-shrink-0">📎 Đính kèm:</span>
             {attachedDocs.map(a => (
-              <span key={a.doc_id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-emerald-300 rounded-full text-emerald-700 shadow-sm">
+              <span key={a.doc_id} className="neo-chip text-emerald-700">
                 {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
                 <span className="text-[10px] text-emerald-400 border-l border-emerald-100 pl-1">
                   {sessionDocStatusLabel(a)}
@@ -567,10 +532,10 @@ export default function Chat() {
 
         {/* Session uploaded documents */}
         {sessionDocs.length > 0 && (
-          <div className="px-4 py-2 bg-blue-50 border-b flex flex-wrap gap-2 items-center">
+          <div className="px-4 py-2 bg-sky-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
             <span className="text-xs text-blue-700 font-semibold flex-shrink-0">📄 File trong session:</span>
             {sessionDocs.map((d: any) => (
-              <span key={d.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-white border border-blue-300 rounded-full text-blue-700 shadow-sm">
+              <span key={d.id} className="neo-chip text-[#006666]">
                 {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
                 <span className="text-[10px] text-blue-400 border-l border-blue-100 pl-1">
                   {sessionDocStatusLabel(d)}
@@ -600,7 +565,7 @@ export default function Chat() {
         <div className="flex-1 flex min-h-0">
           {/* Messages */}
           <div ref={messagesContainerRef} onScroll={handleMessagesScroll}
-            className={`overflow-y-auto p-6 space-y-4 bg-gray-50 transition-all ${showPicker ? "flex-[3]" : "flex-1"}`}>
+            className={`overflow-y-auto p-6 space-y-4 bg-transparent transition-all ${showPicker ? "flex-[3]" : "flex-1"}`}>
             {loadingOlder && <div className="text-center text-xs text-gray-400">Đang tải thêm hội thoại cũ...</div>}
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -613,10 +578,10 @@ export default function Chat() {
             {messages.map((m: ChatMessage) => (
               <div key={m.id} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`flex gap-3 max-w-[78%] ${m.sender === "user" ? "flex-row-reverse" : ""}`}>
-                  <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${m.sender === "user" ? "bg-blue-600" : "bg-slate-700"} text-white`}>
+                  <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center ${m.sender === "user" ? "bg-[#006666]" : "bg-slate-700"} text-white shadow-[6px_6px_14px_rgba(159,154,148,0.45),-6px_-6px_14px_rgba(255,255,255,0.78)]`}>
                     {m.sender === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                   </div>
-                  <div className={`p-4 rounded-2xl shadow-sm ${m.sender === "user" ? "bg-blue-600 text-white rounded-tr-sm" : "bg-white border text-gray-800 rounded-tl-sm"}`}>
+                  <div className={`p-4 rounded-2xl ${m.sender === "user" ? "bg-[#006666] text-white rounded-tr-sm shadow-[7px_7px_16px_rgba(0,62,62,0.20),-7px_-7px_16px_rgba(255,255,255,0.55)]" : "neo-panel-compact text-gray-800 rounded-tl-sm"}`}>
                     <p className="whitespace-pre-wrap leading-relaxed text-sm">{m.content}</p>
                     {m.sender === "ai" && m.sources && (() => {
                       try {
@@ -636,8 +601,8 @@ export default function Chat() {
             {loading && (
               <div className="flex justify-start">
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white"><Bot className="w-4 h-4" /></div>
-                  <div className="bg-white border p-4 rounded-2xl rounded-tl-sm shadow-sm flex gap-1.5">
+                  <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white"><Bot className="w-4 h-4" /></div>
+                  <div className="neo-panel-compact p-4 rounded-2xl rounded-tl-sm flex gap-1.5">
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.15s]" />
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.3s]" />
@@ -650,8 +615,8 @@ export default function Chat() {
 
           {/* File Picker Panel */}
           {showPicker && (
-            <div className="flex-[2] border-l bg-white flex flex-col min-w-0 max-w-xs">
-              <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+            <div className="flex-[2] border-l border-white/60 bg-[#e7e5e4] flex flex-col min-w-0 max-w-xs">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/60">
                 <span className="text-sm font-semibold text-gray-700">📂 Chọn tài liệu từ thư viện</span>
                 <div className="flex items-center gap-1">
                   <button onClick={refreshTree} disabled={treeLoading} className="p-1 text-gray-400 hover:text-blue-500" title="Làm mới">
@@ -682,7 +647,7 @@ export default function Chat() {
                 )}
               </div>
 
-              <div className="p-3 border-t bg-gray-50 text-xs text-gray-400">
+              <div className="p-3 border-t border-white/60 text-xs text-slate-500">
                 Nhấn 📎 trên tài liệu để đính kèm vào phiên chat hiện tại.
                 AI sẽ sử dụng nội dung các file đính kèm khi trả lời.
               </div>
@@ -691,18 +656,18 @@ export default function Chat() {
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t">
+        <div className="p-4 bg-[#e7e5e4]/90 border-t border-white/60">
           <div className="flex gap-2">
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              className="flex-1 px-4 py-3 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="neo-input flex-1 px-4 py-3"
               placeholder="Nhập câu hỏi về văn bản hành chính..."
               disabled={loading}
             />
             <button onClick={handleSend} disabled={!input.trim() || loading}
-              className="px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 transition">
+              className="neo-button neo-button-primary px-5 py-3">
               <Send className="w-5 h-5" />
             </button>
           </div>

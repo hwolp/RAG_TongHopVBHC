@@ -2,13 +2,11 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.config_repository import ConfigRepository
 
 
 def list_configs(db: Session, item_type: str | None = None):
-    query = db.query(models.ConfigItem)
-    if item_type:
-        query = query.filter(models.ConfigItem.type == item_type)
-    rows = query.order_by(models.ConfigItem.id.asc()).all()
+    rows = ConfigRepository(db).list(item_type)
     return [
         {
             "id": row.id,
@@ -27,18 +25,17 @@ def create_config(db: Session, key: str, value: str, item_type: str):
     clean_type = (item_type or "metadata").strip()
     if not clean_key or not clean_value:
         raise HTTPException(status_code=400, detail="key va value khong duoc de trong")
-    existed = db.query(models.ConfigItem).filter(models.ConfigItem.key == clean_key).first()
-    if existed:
+    configs = ConfigRepository(db)
+    if configs.get_by_key(clean_key):
         raise HTTPException(status_code=400, detail="key da ton tai")
     item = models.ConfigItem(key=clean_key, value=clean_value, type=clean_type)
-    db.add(item)
-    db.commit()
-    db.refresh(item)
+    configs.add(item)
     return {"status": "success", "id": item.id}
 
 
 def update_config(db: Session, config_id: int, key: str | None, value: str | None, item_type: str | None):
-    item = db.query(models.ConfigItem).filter(models.ConfigItem.id == config_id).first()
+    configs = ConfigRepository(db)
+    item = configs.get(config_id)
     if not item:
         raise HTTPException(status_code=404, detail="Config khong ton tai")
 
@@ -46,11 +43,7 @@ def update_config(db: Session, config_id: int, key: str | None, value: str | Non
         clean_key = key.strip()
         if not clean_key:
             raise HTTPException(status_code=400, detail="key khong hop le")
-        existed = db.query(models.ConfigItem).filter(
-            models.ConfigItem.key == clean_key,
-            models.ConfigItem.id != config_id,
-        ).first()
-        if existed:
+        if configs.key_exists(clean_key, exclude_id=config_id):
             raise HTTPException(status_code=400, detail="key da ton tai")
         item.key = clean_key
     if value is not None:
@@ -64,14 +57,14 @@ def update_config(db: Session, config_id: int, key: str | None, value: str | Non
             raise HTTPException(status_code=400, detail="type khong hop le")
         item.type = clean_type
 
-    db.commit()
+    configs.commit()
     return {"status": "success"}
 
 
 def delete_config(db: Session, config_id: int):
-    item = db.query(models.ConfigItem).filter(models.ConfigItem.id == config_id).first()
+    configs = ConfigRepository(db)
+    item = configs.get(config_id)
     if not item:
         raise HTTPException(status_code=404, detail="Config khong ton tai")
-    db.delete(item)
-    db.commit()
+    configs.delete(item)
     return {"status": "success"}

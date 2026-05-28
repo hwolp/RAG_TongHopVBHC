@@ -7,13 +7,15 @@ from sqlalchemy.orm import Session
 
 from config import UPLOAD_DIR_DEPARTMENT, UPLOAD_DIR_PERSONAL, UPLOAD_DIR_SQP
 from database import models
+from repositories.chat_repository import ChatRepository
 from repositories.department_repository import DepartmentRepository
 from repositories.document_repository import DocumentRepository
+from repositories.job_repository import BackgroundJobRepository
 from repositories.user_repository import UserRepository
 from services.jobs import job_service
 from services.policies.access_policy import can_access_document
 from utils.enum_utils import enum_value
-from utils.errors import forbidden, not_found
+from utils.errors import bad_request, forbidden, not_found
 from utils.file_storage import (
     delete_file_if_exists,
     replace_file_path,
@@ -43,6 +45,7 @@ def _save_upload_file(file: UploadFile, target_dir: str, stored_name: str | None
 class DocumentIndexCoordinator:
     def __init__(self, db: Session):
         self.db = db
+        self.jobs = BackgroundJobRepository(db)
 
     def upload_response(self, doc: models.Document, created_by: int | None, force_admin_chunking: bool = False) -> dict:
         job = job_service.create_index_job(self.db, doc, created_by, force_admin_chunking)
@@ -53,13 +56,35 @@ class DocumentIndexCoordinator:
     def index_status(self, doc: models.Document) -> str:
         if doc.is_indexed:
             return "indexed"
-        job = self.db.query(models.BackgroundJob).filter(
-            models.BackgroundJob.document_id == doc.id,
-            models.BackgroundJob.type == job_service.JOB_TYPE_INDEX_DOCUMENT,
-        ).order_by(models.BackgroundJob.created_at.desc()).first()
+        job = self.jobs.latest_for_document(doc.id, job_service.JOB_TYPE_INDEX_DOCUMENT)
         if job and job.status in {"queued", "running", "failed"}:
             return job.status
-        return "not_indexed"
+        return "not_    indexed"
+
+    def queue_department_index(self, manager_user_id: int, doc_id: int) -> dict:
+        manager = UserRepository(self.db).get(manager_user_id)
+        if not manager:
+            raise not_found("Khong tim thay nguoi dung")
+
+        doc = DocumentRepository(self.db).get_department_active(doc_id, manager.department_id)
+        if not doc:
+            raise not_found("Tài liệu không tồn tại hoặc không thuộc phòng ban")
+
+        if doc.is_indexed:
+            return {"status": "already_indexed", "doc_id": doc_id}
+
+        running_job = self.jobs.latest_active_for_document(
+            doc.id,
+            job_service.JOB_TYPE_INDEX_DOCUMENT,
+            [job_service.STATUS_QUEUED, job_service.STATUS_RUNNING],
+        )
+        if running_job:
+            return {"status": running_job.status, "doc_id": doc_id, "job_id": running_job.id}
+
+        job = job_service.create_index_job(self.db, doc, manager_user_id)
+        if not job:
+            raise bad_request("Định dạng file chưa hỗ trợ index")
+        return {"status": "queued", "doc_id": doc_id, "job_id": job.id}
 
 
 def _upload_response_with_index_job(
@@ -137,6 +162,7 @@ class DocumentQueryService:
     def __init__(self, db: Session):
         self.db = db
         self.documents = DocumentRepository(db)
+        self.chat = ChatRepository(db)
         self.users = UserRepository(db)
         self.presenter = DocumentPresenter(DocumentIndexCoordinator(db))
 
@@ -188,10 +214,7 @@ class DocumentQueryService:
         return self.presenter.detail(doc)
 
     def get_sqp_document_detail(self, doc_id: int):
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.sqp,
-        ).first()
+        doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.sqp)
         if not doc:
             raise not_found("Quy dinh khong ton tai")
         return {
@@ -234,10 +257,7 @@ class DocumentQueryService:
         return [self.presenter.deleted_item(doc) for doc in self.documents.list_deleted_for_user(user)]
 
     def list_session_documents(self, user_id: int, session_id: int) -> list[dict]:
-        session = self.db.query(models.ChatSession).filter(
-            models.ChatSession.id == session_id,
-            models.ChatSession.user_id == user_id,
-        ).first()
+        session = self.chat.get_session(session_id, user_id)
         if not session:
             raise not_found("Session không tồn tại")
         docs = self.documents.list_session_documents(user_id, session_id)
@@ -262,6 +282,7 @@ class DocumentUploadService:
         self.documents = DocumentRepository(db)
         self.users = UserRepository(db)
         self.departments = DepartmentRepository(db)
+        self.chat = ChatRepository(db)
         self.indexer = DocumentIndexCoordinator(db)
 
     async def upload_personal_document(self, user_id: int, file: UploadFile):
@@ -277,10 +298,7 @@ class DocumentUploadService:
         return self.indexer.upload_response(doc, user_id)
 
     async def upload_session_personal_document(self, user_id: int, session_id: int, file: UploadFile):
-        session = self.db.query(models.ChatSession).filter(
-            models.ChatSession.id == session_id,
-            models.ChatSession.user_id == user_id,
-        ).first()
+        session = self.chat.get_session(session_id, user_id)
         if not session:
             raise not_found("Phien khong ton tai")
 
@@ -334,7 +352,7 @@ class DocumentUploadService:
         clean_name = safe_filename(file.filename)
         base_dir = os.path.dirname(doc.file_path) or UPLOAD_DIR_PERSONAL
         if not self.documents.has_versions(doc_id):
-            self.db.add(models.DocumentVersion(
+            self.documents.add_version(models.DocumentVersion(
                 document_id=doc.id,
                 filename=doc.filename,
                 file_path=doc.file_path,
@@ -353,13 +371,13 @@ class DocumentUploadService:
             version_number=next_version,
             uploaded_by=user_id,
         )
-        self.db.add(version)
+        self.documents.add_version(version)
         doc.filename = clean_name
         doc.file_path = file_path
         doc.version_number = next_version
         doc.is_indexed = False
-        self.db.commit()
-        self.db.refresh(version)
+        self.documents.commit()
+        self.documents.refresh(version)
         job = job_service.create_index_job(self.db, doc, user_id)
         return {
             "status": "queued" if job else "success",
@@ -399,31 +417,21 @@ class DocumentLifecycleService:
         self.documents = DocumentRepository(db)
         self.users = UserRepository(db)
         self.departments = DepartmentRepository(db)
+        self.chat = ChatRepository(db)
 
     def delete_personal_document(self, user_id: int, doc_id: int):
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.owner_id == user_id,
-            models.Document.scope == models.ScopeEnum.personal,
-            models.Document.is_deleted == False,
-        ).first()
+        doc = self.documents.get_owned_personal_active(doc_id, user_id)
         if not doc:
             raise not_found("Tai lieu khong ton tai")
         doc.is_deleted = True
         doc.deleted_at = utc_now()
-        self.db.commit()
+        self.documents.commit()
         return {"status": "success"}
 
     def delete_department_document(self, manager_user_id: int, doc_id: int):
         manager = self._require_user(manager_user_id)
-        query = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.department,
-            models.Document.is_deleted == False,
-        )
-        if manager.role != models.RoleEnum.admin:
-            query = query.filter(models.Document.department_id == manager.department_id)
-        doc = query.first()
+        department_id = None if manager.role == models.RoleEnum.admin else manager.department_id
+        doc = self.documents.get_department_active(doc_id, department_id)
         if not doc:
             raise not_found("Tai lieu khong ton tai trong phong ban")
         delete_file_if_exists(doc.file_path)
@@ -438,10 +446,7 @@ class DocumentLifecycleService:
         department_id: Optional[int] = None,
     ):
         self._require_admin(admin_user_id)
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.department,
-        ).first()
+        doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.department, include_deleted=True)
         if not doc:
             raise not_found("Tai lieu phong ban khong ton tai")
 
@@ -453,8 +458,8 @@ class DocumentLifecycleService:
                 raise not_found("Phong ban khong ton tai")
             doc.department_id = department_id
 
-        self.db.commit()
-        self.db.refresh(doc)
+        self.documents.commit()
+        self.documents.refresh(doc)
         return {
             "status": "success",
             "id": doc.id,
@@ -469,26 +474,20 @@ class DocumentLifecycleService:
         filename: Optional[str] = None,
     ):
         self._require_admin(admin_user_id)
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.sqp,
-        ).first()
+        doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.sqp, include_deleted=True)
         if not doc:
             raise not_found("Tai lieu SQP khong ton tai")
 
         if filename is not None and filename.strip():
             doc.filename, doc.file_path = replace_file_path(doc.file_path, filename)
 
-        self.db.commit()
-        self.db.refresh(doc)
+        self.documents.commit()
+        self.documents.refresh(doc)
         return {"status": "success", "id": doc.id, "filename": doc.filename}
 
     def delete_sqp_document_for_admin(self, admin_user_id: int, doc_id: int):
         self._require_admin(admin_user_id)
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.scope == models.ScopeEnum.sqp,
-        ).first()
+        doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.sqp, include_deleted=True)
         if not doc:
             raise not_found("Tai lieu SQP khong ton tai")
         delete_file_if_exists(doc.file_path)
@@ -504,22 +503,15 @@ class DocumentLifecycleService:
             raise forbidden("Khong co quyen khoi phuc tai lieu nay")
         doc.is_deleted = False
         doc.deleted_at = None
-        self.db.commit()
+        self.documents.commit()
         return {"status": "success", "doc_id": doc.id}
 
     def delete_session_document(self, user_id: int, session_id: int, doc_id: int) -> dict:
-        session = self.db.query(models.ChatSession).filter(
-            models.ChatSession.id == session_id,
-            models.ChatSession.user_id == user_id,
-        ).first()
+        session = self.chat.get_session(session_id, user_id)
         if not session:
             raise not_found("Session không tồn tại")
 
-        doc = self.db.query(models.Document).filter(
-            models.Document.id == doc_id,
-            models.Document.chat_session_id == session_id,
-            models.Document.owner_id == user_id,
-        ).first()
+        doc = self.documents.get_session_document(doc_id, user_id, session_id)
         if not doc:
             raise not_found("Tài liệu không tồn tại trong session")
 
@@ -647,3 +639,7 @@ def list_session_documents(db: Session, user_id: int, session_id: int) -> list[d
 
 def delete_session_document(db: Session, user_id: int, session_id: int, doc_id: int) -> dict:
     return DocumentLifecycleService(db).delete_session_document(user_id, session_id, doc_id)
+
+
+def queue_department_document_index(db: Session, manager_user_id: int, doc_id: int) -> dict:
+    return DocumentIndexCoordinator(db).queue_department_index(manager_user_id, doc_id)

@@ -5,7 +5,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from config import UPLOAD_DIR_DEPARTMENT, UPLOAD_DIR_PERSONAL, UPLOAD_DIR_SQP
-from database import models
+from repositories.document_repository import DocumentRepository
+from repositories.maintenance_repository import MaintenanceRepository
 
 
 def _safe_upload_roots() -> list[Path]:
@@ -64,22 +65,12 @@ def clear_collection_data(db: Session) -> dict:
     manager = ChromaDBManager()
     manager.admin_clear_db()
 
-    document_paths = [row[0] for row in db.query(models.Document.file_path).all()]
-    version_paths = [row[0] for row in db.query(models.DocumentVersion.file_path).all()]
+    documents = DocumentRepository(db)
+    document_paths = documents.list_file_paths()
+    version_paths = documents.list_version_paths()
     deleted_files, file_errors = _delete_known_files(document_paths + version_paths)
 
-    counts = {
-        "background_jobs": db.query(models.BackgroundJob).delete(synchronize_session=False),
-        "chat_messages": db.query(models.ChatMessage).delete(synchronize_session=False),
-        "session_doc_attachments": db.query(models.SessionDocAttachment).delete(synchronize_session=False),
-        "shared_documents": db.query(models.SharedDocument).delete(synchronize_session=False),
-        "sqp_proposals": db.query(models.SQPProposal).delete(synchronize_session=False),
-        "document_tags": db.query(models.DocumentTag).delete(synchronize_session=False),
-        "document_versions": db.query(models.DocumentVersion).delete(synchronize_session=False),
-        "documents": db.query(models.Document).delete(synchronize_session=False),
-        "chat_sessions": db.query(models.ChatSession).delete(synchronize_session=False),
-    }
-    db.commit()
+    counts = MaintenanceRepository(db).clear_rag_data()
 
     deleted_upload_entries = 0
     for root in _safe_upload_roots():

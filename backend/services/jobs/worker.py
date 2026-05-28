@@ -2,6 +2,8 @@ import traceback
 
 from database import models
 from database.db_config import SessionLocal
+from repositories.chat_repository import ChatRepository
+from repositories.job_repository import BackgroundJobRepository
 from services.jobs import job_service
 from services.jobs.handlers import ChatAnswerJobHandler, IndexDocumentJobHandler, JobDispatcher
 
@@ -9,16 +11,15 @@ from services.jobs.handlers import ChatAnswerJobHandler, IndexDocumentJobHandler
 def _set_chat_message_failed(db, job: models.BackgroundJob, error: str) -> None:
     if job.type != job_service.JOB_TYPE_CHAT_ANSWER or not job.message_id:
         return
-    ai_message = db.query(models.ChatMessage).filter(
-        models.ChatMessage.id == job.message_id,
-    ).first()
+    chat = ChatRepository(db)
+    ai_message = chat.get_message(job.message_id)
     if not ai_message:
         return
 
     clean_error = (error or "Không rõ lỗi.").strip()
     ai_message.content = f"Xử lý AI thất bại.\n\n{clean_error}"
     ai_message.sources = "[]"
-    db.commit()
+    chat.commit()
 
 
 def run_job(job_id: int, db=None) -> None:
@@ -31,7 +32,7 @@ def run_job(job_id: int, db=None) -> None:
 
         JobDispatcher(db).dispatch(job)
     except Exception as exc:
-        job = db.query(models.BackgroundJob).filter(models.BackgroundJob.id == job_id).first()
+        job = BackgroundJobRepository(db).get(job_id)
         if job:
             error = f"{exc}\n{traceback.format_exc()}"
             _set_chat_message_failed(db, job, str(exc))

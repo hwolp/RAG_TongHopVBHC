@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "../api";
+import api, { waitForJob } from "../api";
 import {
   FileText, Upload, Trash2, Download, Search,
   LayoutGrid, List, RefreshCw,
@@ -54,32 +54,22 @@ export default function Library() {
     fetchTree();
   };
 
-  const pollIndexJob = async (jobId: number) => {
+  const waitIndexJob = async (jobId: number) => {
     setJobMessage("Tài liệu đã tải lên, đang chờ worker index...");
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
-        if (r.data.status === "running") {
-          setJobMessage("Worker đang index tài liệu...");
-        }
-        if (r.data.status === "success") {
-          setJobMessage("Index tài liệu hoàn tất.");
-          await fetchDocs();
-          if (viewMode === "tree") await fetchTree();
-          return;
-        }
-        if (r.data.status === "failed") {
-          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
-          await fetchDocs();
-          return;
-        }
-      } catch {
-        setJobMessage("Không thể kiểm tra trạng thái job index.");
-        return;
+    try {
+      const job = await waitForJob<JobResponse>(jobId);
+      if (job.status === "success") {
+        setJobMessage("Index tài liệu hoàn tất.");
+      } else if (job.status === "failed") {
+        setJobMessage("Index thất bại: " + (job.error || "Không rõ lỗi."));
+      } else {
+        setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
       }
+      await fetchDocs();
+      if (viewMode === "tree") await fetchTree();
+    } catch {
+      setJobMessage("Không thể chờ trạng thái job index.");
     }
-    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra Redis/RQ worker.");
   };
 
   const indexBadge = (doc: Doc) => {
@@ -116,7 +106,7 @@ export default function Library() {
       await fetchDocs();
       if (viewMode === "tree") fetchTree();
       if (r.data.job_id) {
-        void pollIndexJob(r.data.job_id);
+        void waitIndexJob(r.data.job_id);
       } else {
         setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
       }
@@ -140,28 +130,28 @@ export default function Library() {
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
+    <div className="neo-page max-w-6xl">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kho Tài Liệu Cá Nhân</h1>
-          <p className="text-gray-500 text-sm mt-1">Tải lên, quản lý và tìm kiếm tài liệu của bạn</p>
+          <h1 className="text-2xl font-bold text-slate-900">Kho Tài Liệu Cá Nhân</h1>
+          <p className="text-slate-500 text-sm mt-1">Tải lên, quản lý và tìm kiếm tài liệu của bạn</p>
         </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}
           <button onClick={() => setViewMode("grid")}
-            className={`p-2 rounded-lg border transition ${viewMode === "grid" ? "bg-blue-600 text-white border-blue-600" : "text-gray-500 hover:bg-gray-100 border-gray-200"}`}
+            className={`neo-icon-button ${viewMode === "grid" ? "text-white !bg-[#006666]" : "text-slate-500"}`}
             title="Xem dạng lưới">
             <LayoutGrid className="w-4 h-4" />
           </button>
           <button onClick={switchToTree}
-            className={`p-2 rounded-lg border transition ${viewMode === "tree" ? "bg-blue-600 text-white border-blue-600" : "text-gray-500 hover:bg-gray-100 border-gray-200"}`}
+            className={`neo-icon-button ${viewMode === "tree" ? "text-white !bg-[#006666]" : "text-slate-500"}`}
             title="Xem dạng cây thư mục">
             <List className="w-4 h-4" />
           </button>
 
           {/* Upload */}
-          <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer shadow-sm transition">
+          <label className="neo-button neo-button-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             {uploading ? "Đang tải..." : "Tải lên"}
             <input type="file" className="hidden" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} />
@@ -171,7 +161,7 @@ export default function Library() {
 
       {/* Search (grid mode only) */}
       {jobMessage && (
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+        <div className="neo-panel-compact px-4 py-3 text-sm text-[#006666]">
           {jobMessage}
         </div>
       )}
@@ -185,12 +175,12 @@ export default function Library() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && fetchDocs()}
-              className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="neo-input pl-10 pr-4"
               placeholder="Tìm kiếm tài liệu..."
             />
           </div>
           <button onClick={fetchDocs}
-            className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm transition">
+            className="neo-button">
             Tìm
           </button>
         </div>
@@ -201,10 +191,10 @@ export default function Library() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {docs.map((d) => (
-              <div key={d.id} className="bg-white rounded-xl border shadow-sm p-5 hover:shadow-md transition group">
+              <div key={d.id} className="neo-panel p-5 transition group hover:-translate-y-0.5">
                 <div className="flex items-start justify-between mb-3">
-                  <div className="p-2 bg-blue-50 rounded-lg">
-                    <FileText className="w-6 h-6 text-blue-600" />
+                  <div className="neo-stat-icon">
+                    <FileText className="w-6 h-6 text-[#006666]" />
                   </div>
                   {indexBadge(d)}
                 </div>
@@ -212,11 +202,11 @@ export default function Library() {
                 <p className="text-xs text-gray-400 mb-4">{d.uploaded_at?.slice(0, 10)}</p>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
                   <button onClick={() => handleDownload(d.id)}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100">
+                    className="neo-button flex-1 !min-h-0 py-1.5 text-xs text-[#006666]">
                     <Download className="w-3.5 h-3.5" /> Tải xuống
                   </button>
                   <button onClick={() => handleDelete(d.id)}
-                    className="flex items-center justify-center p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100">
+                    className="neo-icon-button !h-8 !w-8 text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -234,7 +224,7 @@ export default function Library() {
 
       {/* Tree View */}
       {viewMode === "tree" && (
-        <div className="bg-white rounded-xl border shadow-sm p-4">
+        <div className="neo-panel p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-700">Cây thư mục tài liệu</h2>
             <button onClick={fetchTree} disabled={treeLoading}

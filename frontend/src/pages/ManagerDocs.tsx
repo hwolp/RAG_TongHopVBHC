@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "../api";
+import api, { waitForJob } from "../api";
 import {
   Upload, Search, Send, RefreshCw, LayoutGrid, List,
   FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X,
@@ -116,32 +116,22 @@ export default function ManagerDocs() {
     fetchTree();
   };
 
-  const pollIndexJob = async (jobId: number) => {
+  const waitIndexJob = async (jobId: number) => {
     setJobMessage("Tài liệu đã được đưa vào hàng đợi index...");
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-        const r = await api.get<JobResponse>(`/jobs/${jobId}`);
-        if (r.data.status === "running") {
-          setJobMessage("Worker đang index tài liệu phòng ban...");
-        }
-        if (r.data.status === "success") {
-          setJobMessage("Index tài liệu phòng ban hoàn tất.");
-          await fetchDocs();
-          if (viewMode === "tree") await fetchTree();
-          return;
-        }
-        if (r.data.status === "failed") {
-          setJobMessage("Index thất bại: " + (r.data.error || "Không rõ lỗi."));
-          await fetchDocs();
-          return;
-        }
-      } catch {
-        setJobMessage("Không thể kiểm tra trạng thái job index.");
-        return;
+    try {
+      const job = await waitForJob<JobResponse>(jobId);
+      if (job.status === "success") {
+        setJobMessage("Index tài liệu phòng ban hoàn tất.");
+      } else if (job.status === "failed") {
+        setJobMessage("Index thất bại: " + (job.error || "Không rõ lỗi."));
+      } else {
+        setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
       }
+      await fetchDocs();
+      if (viewMode === "tree") await fetchTree();
+    } catch {
+      setJobMessage("Không thể chờ trạng thái job index.");
     }
-    setJobMessage("Tài liệu vẫn đang chờ worker xử lý. Hãy kiểm tra backend worker.");
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,7 +145,7 @@ export default function ManagerDocs() {
       await fetchDocs();
       if (viewMode === "tree") fetchTree();
       if (r.data.job_id) {
-        void pollIndexJob(r.data.job_id);
+        void waitIndexJob(r.data.job_id);
       } else {
         setJobMessage("Tải lên hoàn tất. File này chưa cần index nền.");
       }
@@ -195,7 +185,7 @@ export default function ManagerDocs() {
       await fetchDocs();
       if (viewMode === "tree") fetchTree();
       if (r.data.job_id) {
-        void pollIndexJob(r.data.job_id);
+        void waitIndexJob(r.data.job_id);
       } else {
         setJobMessage(r.data.status === "already_indexed" ? "Tài liệu đã được index trước đó." : "Đã gửi yêu cầu index.");
       }

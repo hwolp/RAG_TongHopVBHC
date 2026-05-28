@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from database.db_config import get_db
-from database import models
 from middleware.auth_middleware import require_manager, require_manager_only
-from services.jobs import job_service
+from services.admin.directory_service import AdminDirectoryService
+from services.documents import document_service
 from services.sharing import share_service, sqp_service
 
 router = APIRouter(prefix="/manager", tags=["Trưởng phòng"])
@@ -17,8 +17,7 @@ def list_my_proposals(db: Session = Depends(get_db), user: dict = Depends(requir
 
 @router.get("/departments")
 def list_departments(db: Session = Depends(get_db), user: dict = Depends(require_manager_only)):
-    departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
-    return [{"id": department.id, "name": department.name} for department in departments]
+    return AdminDirectoryService(db).list_departments()
 
 
 @router.post("/sqp/propose/{document_id}")
@@ -69,27 +68,4 @@ def remove_contributor(contrib_id: int, db: Session = Depends(get_db), user: dic
 @router.post("/department/documents/{doc_id}/index")
 def index_department_document(doc_id: int, db: Session = Depends(get_db), user: dict = Depends(require_manager_only)):
     """Kích hoạt index RAG nền cho tài liệu phòng ban chưa được index."""
-    manager_user = db.query(models.User).filter(models.User.id == user["id"]).first()
-    doc = db.query(models.Document).filter(
-        models.Document.id == doc_id,
-        models.Document.department_id == manager_user.department_id,
-        models.Document.scope == models.ScopeEnum.department,
-    ).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Tài liệu không tồn tại hoặc không thuộc phòng ban")
-
-    if doc.is_indexed:
-        return {"status": "already_indexed", "doc_id": doc_id}
-
-    running_job = db.query(models.BackgroundJob).filter(
-        models.BackgroundJob.document_id == doc.id,
-        models.BackgroundJob.type == job_service.JOB_TYPE_INDEX_DOCUMENT,
-        models.BackgroundJob.status.in_([job_service.STATUS_QUEUED, job_service.STATUS_RUNNING]),
-    ).order_by(models.BackgroundJob.created_at.desc()).first()
-    if running_job:
-        return {"status": running_job.status, "doc_id": doc_id, "job_id": running_job.id}
-
-    job = job_service.create_index_job(db, doc, user["id"])
-    if not job:
-        raise HTTPException(status_code=400, detail="Định dạng file chưa hỗ trợ index")
-    return {"status": "queued", "doc_id": doc_id, "job_id": job.id}
+    return document_service.queue_department_document_index(db, user["id"], doc_id)

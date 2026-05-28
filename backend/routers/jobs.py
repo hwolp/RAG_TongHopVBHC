@@ -22,3 +22,13 @@ def list_jobs(
 @router.get("/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     return job_service.get_job(db, job_id, user)
+
+
+@router.get("/{job_id}/wait")
+def wait_for_job(
+    job_id: int,
+    timeout_seconds: int = 600,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return job_service.wait_for_job(db, job_id, user, timeout_seconds)

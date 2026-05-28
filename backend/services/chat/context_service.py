@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.chat_repository import ChatRepository
+from repositories.document_repository import DocumentRepository
 from services.policies.access_policy import can_access_document
 
 
@@ -10,11 +12,7 @@ def build_recent_chat_history(
     limit: int = 10,
     exclude_message_id: int | None = None,
 ) -> str:
-    query = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == session_id)
-    if exclude_message_id is not None:
-        query = query.filter(models.ChatMessage.id != exclude_message_id)
-
-    recent_messages = query.order_by(models.ChatMessage.created_at.desc()).limit(limit).all()
+    recent_messages = ChatRepository(db).list_recent_messages(session_id, limit, exclude_message_id)
     recent_messages.reverse()
 
     lines = []
@@ -47,12 +45,12 @@ def split_accessible_attachments_by_index_status(
 
 
 def _accessible_attached_documents(db: Session, user_model: models.User, session_id: int) -> list[models.Document]:
+    chat = ChatRepository(db)
+    documents_repo = DocumentRepository(db)
     documents = []
-    attachments = db.query(models.SessionDocAttachment).filter(
-        models.SessionDocAttachment.session_id == session_id
-    ).all()
+    attachments = chat.list_attachments(session_id)
     for attachment in attachments:
-        doc = db.query(models.Document).filter(models.Document.id == attachment.doc_id).first()
+        doc = documents_repo.get(attachment.doc_id)
         if can_access_document(db, user_model, doc):
             documents.append(doc)
     return documents

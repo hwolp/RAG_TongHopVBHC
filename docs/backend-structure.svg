@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1040" viewBox="0 0 1500 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Sơ đồ cấu trúc backend dự án RAG Tổng Hợp VBHC</title>
+  <desc id="desc">Kiến trúc backend FastAPI gồm routers, middleware, schemas, services, repositories, database, RAG engine, worker và các dịch vụ ngoài.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#344054"/>
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .title { font: 700 34px Arial, sans-serif; fill: #102a43; }
+      .subtitle { font: 400 17px Arial, sans-serif; fill: #52616f; }
+      .section-title { font: 700 18px Arial, sans-serif; fill: #102a43; }
+      .label { font: 700 15px Arial, sans-serif; fill: #152536; }
+      .small { font: 400 13px Arial, sans-serif; fill: #475467; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #52616f; }
+      .chip { font: 700 12px Arial, sans-serif; fill: #344054; }
+      .container { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 22; }
+      .box { stroke-width: 1.5; rx: 14; }
+      .entry { fill: #e0f2fe; stroke: #0284c7; }
+      .router { fill: #ecfdf3; stroke: #16a34a; }
+      .service { fill: #fff7ed; stroke: #f97316; }
+      .repo { fill: #fef3c7; stroke: #d97706; }
+      .data { fill: #eef2ff; stroke: #4f46e5; }
+      .rag { fill: #fdf2f8; stroke: #db2777; }
+      .external { fill: #f8fafc; stroke: #64748b; }
+      .security { fill: #fef2f2; stroke: #dc2626; }
+      .line { fill: none; stroke: #344054; stroke-width: 2; marker-end: url(#arrow); }
+      .dash { fill: none; stroke: #667085; stroke-width: 2; stroke-dasharray: 7 7; marker-end: url(#arrow); }
+      .flow-label { font: 700 12px Arial, sans-serif; fill: #344054; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="1040"/>
+  <text class="title" x="750" y="58" text-anchor="middle">Cấu trúc Backend - RAG Hành Chính API</text>
+  <text class="subtitle" x="750" y="88" text-anchor="middle">FastAPI v2.0, RBAC, RAG với ChromaDB + Ollama, xử lý nền qua Redis/RQ</text>
+
+  <!-- Client -->
+  <rect class="box external" x="45" y="150" width="190" height="120"/>
+  <text class="label" x="140" y="185" text-anchor="middle">Frontend</text>
+  <text class="small" x="140" y="214" text-anchor="middle">React / Vite</text>
+  <text class="tiny" x="140" y="239" text-anchor="middle">Gọi REST API</text>
+
+  <!-- Backend container -->
+  <rect class="container" x="285" y="125" width="920" height="850"/>
+  <text class="section-title" x="745" y="162" text-anchor="middle">backend/</text>
+
+  <!-- Entrypoint -->
+  <rect class="box entry" x="395" y="190" width="700" height="86"/>
+  <text class="label" x="745" y="223" text-anchor="middle">main.py - FastAPI App</text>
+  <text class="small" x="745" y="249" text-anchor="middle">include_router, CORS, create_all, sync_schema, startup internal worker</text>
+
+  <!-- Middleware + schemas -->
+  <rect class="box security" x="340" y="315" width="285" height="82"/>
+  <text class="label" x="482" y="347" text-anchor="middle">middleware/</text>
+  <text class="small" x="482" y="372" text-anchor="middle">auth_middleware.py</text>
+
+  <rect class="box entry" x="865" y="315" width="285" height="82"/>
+  <text class="label" x="1007" y="347" text-anchor="middle">schemas/</text>
+  <text class="small" x="1007" y="372" text-anchor="middle">Pydantic request/response DTO</text>
+
+  <!-- Routers -->
+  <rect class="box router" x="340" y="435" width="810" height="120"/>
+  <text class="label" x="745" y="466" text-anchor="middle">routers/ - REST endpoints</text>
+  <rect class="box router" x="370" y="488" width="86" height="38"/>
+  <text class="chip" x="413" y="512" text-anchor="middle">auth</text>
+  <rect class="box router" x="466" y="488" width="86" height="38"/>
+  <text class="chip" x="509" y="512" text-anchor="middle">users</text>
+  <rect class="box router" x="562" y="488" width="104" height="38"/>
+  <text class="chip" x="614" y="512" text-anchor="middle">documents</text>
+  <rect class="box router" x="676" y="488" width="86" height="38"/>
+  <text class="chip" x="719" y="512" text-anchor="middle">chat</text>
+  <rect class="box router" x="772" y="488" width="86" height="38"/>
+  <text class="chip" x="815" y="512" text-anchor="middle">jobs</text>
+  <rect class="box router" x="868" y="488" width="86" height="38"/>
+  <text class="chip" x="911" y="512" text-anchor="middle">tags</text>
+  <rect class="box router" x="964" y="488" width="86" height="38"/>
+  <text class="chip" x="1007" y="512" text-anchor="middle">manager</text>
+  <rect class="box router" x="1060" y="488" width="66" height="38"/>
+  <text class="chip" x="1093" y="512" text-anchor="middle">admin</text>
+
+  <!-- Services -->
+  <rect class="box service" x="340" y="595" width="810" height="182"/>
+  <text class="label" x="745" y="626" text-anchor="middle">services/ - nghiệp vụ theo domain</text>
+  <rect class="box service" x="370" y="650" width="122" height="42"/>
+  <text class="chip" x="431" y="675" text-anchor="middle">auth</text>
+  <rect class="box service" x="502" y="650" width="122" height="42"/>
+  <text class="chip" x="563" y="675" text-anchor="middle">admin</text>
+  <rect class="box service" x="634" y="650" width="122" height="42"/>
+  <text class="chip" x="695" y="675" text-anchor="middle">documents</text>
+  <rect class="box service" x="766" y="650" width="122" height="42"/>
+  <text class="chip" x="827" y="675" text-anchor="middle">chat</text>
+  <rect class="box service" x="898" y="650" width="122" height="42"/>
+  <text class="chip" x="959" y="675" text-anchor="middle">sharing</text>
+  <rect class="box service" x="370" y="710" width="122" height="42"/>
+  <text class="chip" x="431" y="735" text-anchor="middle">jobs</text>
+  <rect class="box service" x="502" y="710" width="122" height="42"/>
+  <text class="chip" x="563" y="735" text-anchor="middle">rag</text>
+  <rect class="box service" x="634" y="710" width="122" height="42"/>
+  <text class="chip" x="695" y="735" text-anchor="middle">policies</text>
+  <rect class="box service" x="766" y="710" width="254" height="42"/>
+  <text class="chip" x="893" y="735" text-anchor="middle">compatibility facades</text>
+
+  <!-- Repositories and db -->
+  <rect class="box repo" x="340" y="815" width="380" height="95"/>
+  <text class="label" x="530" y="850" text-anchor="middle">repositories/</text>
+  <text class="small" x="530" y="875" text-anchor="middle">SQLAlchemy query accessors</text>
+  <text class="tiny" x="530" y="895" text-anchor="middle">user, document, chat, job, sharing, tag, config...</text>
+
+  <rect class="box data" x="770" y="815" width="380" height="95"/>
+  <text class="label" x="960" y="850" text-anchor="middle">database/</text>
+  <text class="small" x="960" y="875" text-anchor="middle">models.py, db_config.py, schema_sync.py</text>
+  <text class="tiny" x="960" y="895" text-anchor="middle">SessionLocal, Base, MySQL engine</text>
+
+  <!-- RAG engine side -->
+  <rect class="box rag" x="945" y="595" width="205" height="182"/>
+  <text class="label" x="1048" y="626" text-anchor="middle">rag_engine/</text>
+  <text class="small" x="1048" y="660" text-anchor="middle">chroma_manager.py</text>
+  <text class="small" x="1048" y="685" text-anchor="middle">ollama_ai.py</text>
+  <text class="small" x="1048" y="710" text-anchor="middle">models.py</text>
+  <text class="tiny" x="1048" y="742" text-anchor="middle">Adapter cụ thể cho vector store</text>
+
+  <!-- Contracts / utils -->
+  <rect class="box external" x="340" y="925" width="380" height="38"/>
+  <text class="small" x="530" y="949" text-anchor="middle">contracts/ - interface provider, vector, retriever</text>
+  <rect class="box external" x="770" y="925" width="380" height="38"/>
+  <text class="small" x="960" y="949" text-anchor="middle">utils/ - errors, enum, time, file storage</text>
+
+  <!-- External dependencies -->
+  <rect class="box external" x="1260" y="150" width="190" height="96"/>
+  <text class="label" x="1355" y="184" text-anchor="middle">MySQL 8</text>
+  <text class="small" x="1355" y="211" text-anchor="middle">rag_db</text>
+
+  <rect class="box external" x="1260" y="285" width="190" height="96"/>
+  <text class="label" x="1355" y="319" text-anchor="middle">Redis / RQ</text>
+  <text class="small" x="1355" y="346" text-anchor="middle">rag_jobs queue</text>
+
+  <rect class="box external" x="1260" y="420" width="190" height="96"/>
+  <text class="label" x="1355" y="454" text-anchor="middle">Ollama</text>
+  <text class="small" x="1355" y="481" text-anchor="middle">LLM provider</text>
+
+  <rect class="box external" x="1260" y="555" width="190" height="96"/>
+  <text class="label" x="1355" y="589" text-anchor="middle">ChromaDB</text>
+  <text class="small" x="1355" y="616" text-anchor="middle">Vector storage</text>
+
+  <rect class="box external" x="1260" y="690" width="190" height="96"/>
+  <text class="label" x="1355" y="724" text-anchor="middle">uploads/</text>
+  <text class="small" x="1355" y="751" text-anchor="middle">personal, department, sqp</text>
+
+  <!-- Main arrows -->
+  <path class="line" d="M235 210 C260 210 270 233 395 233"/>
+  <text class="flow-label" x="268" y="198">HTTP API</text>
+  <path class="line" d="M745 276 L745 432"/>
+  <path class="line" d="M625 356 C675 356 690 420 706 435"/>
+  <path class="line" d="M865 356 C820 372 796 410 780 435"/>
+  <path class="line" d="M745 555 L745 592"/>
+  <path class="line" d="M660 777 L575 813"/>
+  <path class="line" d="M830 777 L915 813"/>
+  <path class="line" d="M720 862 L766 862"/>
+
+  <!-- External arrows -->
+  <path class="line" d="M1150 862 C1215 862 1215 198 1260 198"/>
+  <text class="flow-label" x="1198" y="180">SQL</text>
+  <path class="line" d="M431 752 C430 805 1210 332 1260 332"/>
+  <text class="flow-label" x="1198" y="316">Queue</text>
+  <path class="line" d="M1048 595 C1102 558 1200 468 1260 468"/>
+  <text class="flow-label" x="1195" y="448">Generate</text>
+  <path class="line" d="M1048 777 C1120 742 1196 603 1260 603"/>
+  <text class="flow-label" x="1192" y="585">Retrieve / index</text>
+  <path class="line" d="M695 692 C820 710 1170 738 1260 738"/>
+  <text class="flow-label" x="1186" y="722">Files</text>
+
+  <!-- RAG relationships -->
+  <path class="dash" d="M827 692 C876 690 900 675 945 675"/>
+  <text class="flow-label" x="855" y="666">Chat RAG</text>
+  <path class="dash" d="M563 710 C690 600 816 642 945 650"/>
+  <text class="flow-label" x="687" y="621">OCR / chunk</text>
+  <path class="dash" d="M431 710 C500 585 845 605 945 618"/>
+  <text class="flow-label" x="680" y="584">Index job</text>
+
+  <!-- Flow notes -->
+  <rect class="box external" x="45" y="320" width="190" height="312"/>
+  <text class="label" x="140" y="354" text-anchor="middle">Luồng chính</text>
+  <text class="small" x="62" y="392">1. Upload tài liệu</text>
+  <text class="tiny" x="62" y="416">documents -> jobs -></text>
+  <text class="tiny" x="62" y="436">DocumentProcessor -> Chroma</text>
+  <text class="small" x="62" y="479">2. Hỏi đáp RAG</text>
+  <text class="tiny" x="62" y="503">chat -> context -> Chroma -></text>
+  <text class="tiny" x="62" y="523">PromptBuilder -> Ollama</text>
+  <text class="small" x="62" y="566">3. Chia sẻ / SQP</text>
+  <text class="tiny" x="62" y="590">manager/admin -> sharing -></text>
+  <text class="tiny" x="62" y="610">repositories -> MySQL</text>
+
+  <!-- Legend -->
+  <rect class="box external" x="1260" y="835" width="190" height="128"/>
+  <text class="label" x="1355" y="866" text-anchor="middle">Chú giải</text>
+  <rect class="box router" x="1280" y="888" width="20" height="14"/>
+  <text class="tiny" x="1310" y="900">API layer</text>
+  <rect class="box service" x="1280" y="912" width="20" height="14"/>
+  <text class="tiny" x="1310" y="924">Business logic</text>
+  <rect class="box repo" x="1280" y="936" width="20" height="14"/>
+  <text class="tiny" x="1310" y="948">Data access</text>
+</svg>

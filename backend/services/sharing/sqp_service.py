@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 
 from database import models
+from repositories.document_repository import DocumentRepository
+from repositories.sqp_repository import SQPProposalRepository
 from services.jobs import job_service
 from utils.enum_utils import enum_value
 from utils.errors import bad_request, not_found
@@ -11,7 +13,7 @@ def _status_str(status_value) -> str:
 
 
 def list_all_proposals(db: Session):
-    proposals = db.query(models.SQPProposal).order_by(models.SQPProposal.created_at.desc()).all()
+    proposals = SQPProposalRepository(db).list_all()
     return [
         {
             "id": p.id,
@@ -25,9 +27,7 @@ def list_all_proposals(db: Session):
 
 
 def list_manager_proposals(db: Session, manager_user_id: int):
-    proposals = db.query(models.SQPProposal).filter(
-        models.SQPProposal.proposed_by == manager_user_id
-    ).order_by(models.SQPProposal.created_at.desc()).all()
+    proposals = SQPProposalRepository(db).list_by_manager(manager_user_id)
 
     return [
         {
@@ -41,45 +41,38 @@ def list_manager_proposals(db: Session, manager_user_id: int):
 
 
 def propose_document_to_sqp(db: Session, manager_user_id: int, document_id: int):
-    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    proposals = SQPProposalRepository(db)
+    doc = DocumentRepository(db).get(document_id)
     if not doc:
         raise not_found("Tai lieu khong ton tai")
 
-    existing = db.query(models.SQPProposal).filter(
-        models.SQPProposal.document_id == document_id,
-        models.SQPProposal.status == models.ProposalStatus.pending,
-    ).first()
-    if existing:
+    if proposals.pending_for_document(document_id):
         raise bad_request("Tai lieu da co de xuat dang cho duyet")
 
     proposal = models.SQPProposal(document_id=document_id, proposed_by=manager_user_id)
-    db.add(proposal)
-    db.commit()
-    db.refresh(proposal)
+    proposals.add(proposal)
     return {"status": "success", "proposal_id": proposal.id}
 
 
 def cancel_pending_proposal(db: Session, manager_user_id: int, proposal_id: int):
-    proposal = db.query(models.SQPProposal).filter(
-        models.SQPProposal.id == proposal_id,
-        models.SQPProposal.proposed_by == manager_user_id,
-        models.SQPProposal.status == models.ProposalStatus.pending,
-    ).first()
+    proposals = SQPProposalRepository(db)
+    proposal = proposals.get_pending_by_manager(manager_user_id, proposal_id)
     if not proposal:
         raise not_found("De xuat khong ton tai hoac da duoc xu ly")
 
-    db.delete(proposal)
-    db.commit()
+    proposals.delete(proposal)
     return {"status": "success"}
 
 
 def approve_proposal(db: Session, proposal_id: int):
-    proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
+    proposals = SQPProposalRepository(db)
+    documents = DocumentRepository(db)
+    proposal = proposals.get(proposal_id)
     if not proposal:
         raise not_found("De xuat khong ton tai")
 
     proposal.status = models.ProposalStatus.approved
-    doc = db.query(models.Document).filter(models.Document.id == proposal.document_id).first()
+    doc = documents.get(proposal.document_id)
     job = None
     if doc:
         if doc.is_indexed:
@@ -91,10 +84,10 @@ def approve_proposal(db: Session, proposal_id: int):
                 pass
         doc.scope = models.ScopeEnum.sqp
         doc.is_indexed = False
-        db.commit()
+        proposals.commit()
         job = job_service.create_index_job(db, doc, proposal.proposed_by, force_admin_chunking=True)
     else:
-        db.commit()
+        proposals.commit()
 
     return {
         "status": "success",
@@ -104,10 +97,11 @@ def approve_proposal(db: Session, proposal_id: int):
 
 
 def reject_proposal(db: Session, proposal_id: int):
-    proposal = db.query(models.SQPProposal).filter(models.SQPProposal.id == proposal_id).first()
+    proposals = SQPProposalRepository(db)
+    proposal = proposals.get(proposal_id)
     if not proposal:
         raise not_found("De xuat khong ton tai")
 
     proposal.status = models.ProposalStatus.rejected
-    db.commit()
+    proposals.commit()
     return {"status": "success"}
