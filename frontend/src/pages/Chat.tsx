@@ -408,7 +408,7 @@ export default function Chat() {
   const sourceLabel = (source: unknown) => {
     const sourceId = String(source);
     const filename = sourceNameById.get(sourceId);
-    return filename ? `${filename} (#${sourceId})` : `Tài liệu #${sourceId}`;
+    return filename || "Tài liệu";
   };
 
   const sessionDocStatusLabel = (doc: any) => {
