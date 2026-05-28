@@ -49,7 +49,14 @@ def create_user(
     return users.add(user)
 
 
-def update_user(db: Session, user_id: int, full_name: Optional[str], role: Optional[str], department_id: Optional[int]):
+def update_user(
+    db: Session,
+    user_id: int,
+    full_name: Optional[str],
+    role: Optional[str],
+    department_id: Optional[int],
+    password: Optional[str] = None,
+):
     users = UserRepository(db)
     user = users.get(user_id)
     if not user:
@@ -61,6 +68,8 @@ def update_user(db: Session, user_id: int, full_name: Optional[str], role: Optio
         user.role = models.RoleEnum(role)
     if department_id is not None:
         user.department_id = department_id
+    if password:
+        user.hashed_password = get_password_hash(password)
 
     users.commit()
     users.refresh(user)

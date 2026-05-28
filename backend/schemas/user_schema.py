@@ -12,6 +12,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = None
     department_id: Optional[int] = None
+    password: Optional[str] = None
 
 class UserOut(BaseModel):
     id: int

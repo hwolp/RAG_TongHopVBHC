@@ -508,6 +508,7 @@ export default function ManagerDocs() {
             <FolderTree
               data={treeData}
               onDelete={handleDelete}
+              canDelete={(doc) => doc.scope === "department"}
               onAttach={handleTreePropose}
               onDownload={(id) => window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank")}
             />
