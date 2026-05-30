@@ -91,7 +91,7 @@ OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0"))
 # === ChromaDB Config ===
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_DIR", "./database/chromadb_storage")
 EMBEDDING_MODEL_BASE_URL = os.getenv("EMBEDDING_MODEL_BASE_URL", "sentence-transformers")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "dangvantuan/vietnamese-document-embedding")
 EMBEDDING_MODEL_CACHE_DIR = _backend_path(os.getenv("EMBEDDING_MODEL_CACHE_DIR", "./models/huggingface"))
 EMBEDDING_MODEL_ALLOW_DOWNLOAD = _env_bool("EMBEDDING_MODEL_ALLOW_DOWNLOAD", True)
 

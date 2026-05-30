@@ -3,7 +3,7 @@
 Backend dung `HuggingFaceEmbeddings` voi model mac dinh:
 
 ```text
-sentence-transformers/all-MiniLM-L6-v2
+dangvantuan/vietnamese-document-embedding
 ```
 
 Luồng da duoc cau hinh:
@@ -18,7 +18,7 @@ Luồng da duoc cau hinh:
 Trong `backend/.env`:
 
 ```dotenv
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_MODEL=dangvantuan/vietnamese-document-embedding
 EMBEDDING_MODEL_CACHE_DIR=./models/huggingface
 EMBEDDING_MODEL_ALLOW_DOWNLOAD=true
 ```

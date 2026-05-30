@@ -75,7 +75,7 @@ OLLAMA_TEMPERATURE=0
 
 CHROMA_DIR=./database/chromadb_storage
 
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_MODEL=dangvantuan/vietnamese-document-embedding
 EMBEDDING_MODEL_CACHE_DIR=./models/huggingface
 EMBEDDING_MODEL_ALLOW_DOWNLOAD=true
 
@@ -132,7 +132,7 @@ Khong can chay lenh rieng. Khi Backend can embedding lan dau, no se:
 
 1. Thu doc model tu cache local.
 2. Neu cache chua co va may co internet, tu tai
-   `sentence-transformers/all-MiniLM-L6-v2`.
+   `dangvantuan/vietnamese-document-embedding`.
 3. Luu vao `backend/models/huggingface`.
 4. Cac lan sau dung lai cache local.
 

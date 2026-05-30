@@ -133,15 +133,42 @@ class ChromaDBManager(VectorStoreInterface):
             "model_name": EMBEDDING_MODEL,
             "cache_folder": EMBEDDING_MODEL_CACHE_DIR,
         }
+        model_kwargs = {}
+        if EMBEDDING_MODEL == "dangvantuan/vietnamese-document-embedding":
+            model_kwargs["trust_remote_code"] = True
         try:
-            return HuggingFaceEmbeddings(
+            embeddings = HuggingFaceEmbeddings(
                 **model_options,
-                model_kwargs={"local_files_only": True},
+                model_kwargs={**model_kwargs, "local_files_only": True},
             )
         except Exception:
             if not EMBEDDING_MODEL_ALLOW_DOWNLOAD:
                 raise
-            return HuggingFaceEmbeddings(**model_options)
+            embeddings = HuggingFaceEmbeddings(**model_options, model_kwargs=model_kwargs)
+        self._repair_embedding_model(embeddings)
+        return embeddings
+
+    @staticmethod
+    def _repair_embedding_model(embeddings: HuggingFaceEmbeddings) -> None:
+        client = getattr(embeddings, "_client", None) or getattr(embeddings, "client", None)
+        if not client or EMBEDDING_MODEL != "dangvantuan/vietnamese-document-embedding":
+            return
+        try:
+            import torch
+
+            transformer = client[0] if hasattr(client, "__getitem__") else None
+            auto_model = getattr(transformer, "auto_model", None)
+            model = getattr(auto_model, "Vietnamese", auto_model)
+            embedding_layer = getattr(model, "embeddings", None)
+            config = getattr(auto_model, "config", None)
+            max_positions = getattr(config, "max_position_embeddings", None)
+            word_embeddings = getattr(embedding_layer, "word_embeddings", None)
+            if not embedding_layer or not max_positions or not word_embeddings:
+                return
+            position_ids = torch.arange(max_positions, device=word_embeddings.weight.device)
+            embedding_layer.register_buffer("position_ids", position_ids, persistent=False)
+        except Exception:
+            return
 
     def add_documents(self, documents: list[LCDocument]) -> int:
         if not documents:
