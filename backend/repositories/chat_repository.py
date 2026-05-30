@@ -46,7 +46,7 @@ class ChatRepository:
         query = self.db.query(models.ChatMessage).filter(models.ChatMessage.session_id == session_id)
         if exclude_message_id is not None:
             query = query.filter(models.ChatMessage.id != exclude_message_id)
-        return query.order_by(models.ChatMessage.created_at.desc()).limit(limit).all()
+        return query.order_by(models.ChatMessage.id.desc()).limit(limit).all()
 
     def list_messages_before(
         self,

@@ -88,7 +88,15 @@ class ChatAnswerJobHandler(JobHandler):
         normalized_scope = normalize_chat_scope(scope)
         ensure_chat_scope_allowed(user_model, normalized_scope)
 
-        chat_history = build_recent_chat_history(self.db, session.id, exclude_message_id=ai_message.id)
+        current_user_message_id = payload.get("user_message_id")
+        excluded_history_ids = [ai_message.id]
+        if current_user_message_id:
+            excluded_history_ids.append(int(current_user_message_id))
+        chat_history = build_recent_chat_history(
+            self.db,
+            session.id,
+            exclude_message_ids=excluded_history_ids,
+        )
         attached_doc_ids, attached_waiting = split_accessible_attachments_by_index_status(
             self.db, user_model, session.id
         )
@@ -98,23 +106,26 @@ class ChatAnswerJobHandler(JobHandler):
             return
 
         job_service.update_progress(self.db, job, 25)
+        ai = OllamaAI()
+        rewritten_query = self._rewrite_question(ai, question, chat_history)
         manager = ChromaDBManager()
         context, sources = manager.search_context_with_filter(
-            query=question,
+            query=rewritten_query,
             user_id=user_id,
             user_dept_id=user_model.department_id if user_model.department_id is not None else -1,
             search_scope=normalized_scope,
             session_id=session.id if normalized_scope == "personal" else None,
             extra_doc_ids=attached_doc_ids if attached_doc_ids else None,
+            original_query=question,
         )
 
         job_service.update_progress(self.db, job, 60)
         from rag_engine.chroma_manager import is_structure_context
 
-        answer = context if is_structure_context(context) else OllamaAI().generate_answer(
-            question,
+        answer = context if is_structure_context(context) else ai.generate_answer(
+            rewritten_query,
             context,
-            chat_history,
+            "",
         )
 
         job_service.update_progress(self.db, job, 90)
@@ -132,6 +143,16 @@ class ChatAnswerJobHandler(JobHandler):
                 "attached_docs": len(attached_doc_ids),
             },
         )
+
+    @staticmethod
+    def _rewrite_question(ai, question: str, chat_history: str) -> str:
+        rewrite = getattr(ai, "rewrite_query", None)
+        if not callable(rewrite):
+            return question
+        try:
+            return rewrite(question, chat_history) or question
+        except Exception:
+            return question
 
     def _load_job_state(
         self,

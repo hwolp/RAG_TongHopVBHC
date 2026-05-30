@@ -21,6 +21,7 @@ class RetrieverInterface(ABC):
         k: int = 5,
         session_id: Optional[int] = None,
         extra_doc_ids: Optional[list[int]] = None,
+        original_query: Optional[str] = None,
     ) -> tuple[str, list[str]]:
         """Retrieve text context and source document ids for a query."""
 

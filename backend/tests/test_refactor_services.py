@@ -1,5 +1,6 @@
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.documents import Document as LCDocument
@@ -7,8 +8,10 @@ from langchain_core.documents import Document as LCDocument
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from database import models
-from rag_engine.chroma_manager import ChromaDBManager, is_structure_context
+from rag_engine.chroma_manager import ChromaDBManager, _is_structure_query, is_structure_context
 from rag_engine.models import DocumentIndexMetadata
+from services.chat import context_service
+from services.chat.context_service import build_recent_chat_history
 from services.jobs.handlers import JobDispatcher
 from services.rag.document_processor import DocumentProcessor, _postprocess_ocr_text
 
@@ -70,9 +73,16 @@ def test_structure_context_answers_without_document_id_heading(monkeypatch):
     assert is_structure_context(context)
     assert "Tài liệu #97" not in context
     assert context.startswith("Văn bản gồm các phần sau:")
+    assert "- Tổng số điều: 1" in context
+    assert "- Tổng số chương: 1" in context
     assert "- Chương I: QUY ĐỊNH CHUNG" in context
     assert "  - Điều 1: Phạm vi điều chỉnh" in context
     assert sources == ["97"]
+
+
+def test_structure_query_detects_article_count_questions():
+    assert _is_structure_query("Văn bản gồm bao nhiêu điều")
+    assert _is_structure_query("Văn bản này có mấy điều?")
 
 
 def test_document_processor_merges_ocr_pages_with_worker_results(monkeypatch):
@@ -229,3 +239,33 @@ def test_structure_context_renders_roman_numbered_list(monkeypatch):
     assert "  - 1. Mục đích" in context
     assert "  - 2. Yêu cầu" in context
     assert sources == ["88"]
+
+
+def test_recent_chat_history_keeps_latest_valid_turns(monkeypatch):
+    messages = [
+        SimpleNamespace(id=8, sender="ai", content="Đáp án mới nhất"),
+        SimpleNamespace(id=7, sender="user", content="Câu hỏi mới nhất"),
+        SimpleNamespace(id=6, sender="ai", content="Tôi không tìm thấy thông tin này trong văn bản đã nạp."),
+        SimpleNamespace(id=5, sender="user", content="Câu hỏi lỗi"),
+        SimpleNamespace(id=4, sender="ai", content="Đáp án cũ"),
+        SimpleNamespace(id=3, sender="user", content="Câu hỏi cũ"),
+        SimpleNamespace(id=2, sender="ai", content="Đáp án rất cũ"),
+        SimpleNamespace(id=1, sender="user", content="Câu hỏi rất cũ"),
+    ]
+
+    class FakeChatRepository:
+        def __init__(self, db):
+            pass
+
+        def list_recent_messages(self, session_id, limit, exclude_message_id=None):
+            return messages[:limit]
+
+    monkeypatch.setattr(context_service, "ChatRepository", FakeChatRepository)
+
+    history = build_recent_chat_history(object(), 12, limit=2)
+
+    assert "Câu hỏi lỗi" not in history
+    assert history.startswith("Nguoi dung: Câu hỏi cũ")
+    assert "AI: Đáp án cũ" in history
+    assert "Nguoi dung: Câu hỏi mới nhất" in history
+    assert history.rstrip().endswith("AI: Đáp án mới nhất")

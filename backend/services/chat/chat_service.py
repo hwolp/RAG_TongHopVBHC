@@ -153,8 +153,18 @@ class ChatAnswerService:
         session = self.sessions.get_or_create_for_question(user_id, question, session_id)
         attached_doc_ids = accessible_attachment_ids(self.db, user, session.id)
         chat_history = build_recent_chat_history(self.db, session.id)
-        retrieved = self._retrieve_context(user_id, user, question, normalized_scope, session.id, attached_doc_ids)
-        generated = self._generate_answer(question, retrieved, chat_history)
+        ai = self._build_ai()
+        rewritten_query = self._rewrite_question(ai, question, chat_history)
+        retrieved = self._retrieve_context(
+            user_id,
+            user,
+            rewritten_query,
+            normalized_scope,
+            session.id,
+            attached_doc_ids,
+            original_query=question,
+        )
+        generated = self._generate_answer(rewritten_query, retrieved, chat_history, ai)
 
         user_message = models.ChatMessage(session_id=session.id, sender="user", content=question)
         ai_message = models.ChatMessage(
@@ -227,6 +237,7 @@ class ChatAnswerService:
         normalized_scope: str,
         session_id: int,
         attached_doc_ids: list[int],
+        original_query: str | None = None,
     ) -> RetrievedContext:
         from rag_engine.chroma_manager import ChromaDBManager
 
@@ -238,19 +249,35 @@ class ChatAnswerService:
             search_scope=normalized_scope,
             session_id=session_id if normalized_scope == "personal" else None,
             extra_doc_ids=attached_doc_ids if attached_doc_ids else None,
+            original_query=original_query,
         )
         return RetrievedContext(context=context, sources=sources)
 
-    def _generate_answer(self, question: str, retrieved: RetrievedContext, chat_history: str) -> GeneratedAnswer:
-        from rag_engine.ollama_ai import OllamaAI
-
+    def _generate_answer(self, question: str, retrieved: RetrievedContext, chat_history: str, ai=None) -> GeneratedAnswer:
         from rag_engine.chroma_manager import is_structure_context
 
         if is_structure_context(retrieved.context):
             return GeneratedAnswer(answer=retrieved.context, sources=retrieved.sources)
 
-        answer = OllamaAI().generate_answer(question, retrieved.context, chat_history)
+        ai = ai or self._build_ai()
+        answer = ai.generate_answer(question, retrieved.context, "")
         return GeneratedAnswer(answer=answer, sources=retrieved.sources)
+
+    @staticmethod
+    def _build_ai():
+        from rag_engine.ollama_ai import OllamaAI
+
+        return OllamaAI()
+
+    @staticmethod
+    def _rewrite_question(ai, question: str, chat_history: str) -> str:
+        rewrite = getattr(ai, "rewrite_query", None)
+        if not callable(rewrite):
+            return question
+        try:
+            return rewrite(question, chat_history) or question
+        except Exception:
+            return question
 
     def _require_user(self, user_id: int) -> models.User:
         user = self.users.get(user_id)
