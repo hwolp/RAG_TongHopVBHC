@@ -6,12 +6,15 @@ langchain
 langchain-community
 langchain-huggingface
 langchain-chroma
+langchain-ollama
+langchain-text-splitters
 chromadb
 sentence-transformers
 SQLAlchemy
 pymysql
 cryptography
 PyMuPDF
+docx2txt
 pillow
 pytesseract
 passlib[bcrypt]

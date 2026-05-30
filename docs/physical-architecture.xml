@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="Codex">
+  <diagram id="physical-architecture" name="Mô hình kiến trúc vật lý">
+    <mxGraphModel dx="1585" dy="958" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="userBox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#98A2B3;dashed=1;dashPattern=4 5;" value="" vertex="1">
+          <mxGeometry height="135" width="270" x="170" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="userIcon" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=28;" value="👤&#xa;💻 📱" vertex="1">
+          <mxGeometry height="80" width="120" x="160" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="userText" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=13;fontColor=#344054;" value="&lt;b&gt;Thiết bị đầu cuối&lt;/b&gt;&lt;br&gt;Admin / quản lý / nhân viên" vertex="1">
+          <mxGeometry height="58" width="125" x="280" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="dcCloud" parent="1" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#98A2B3;dashed=1;dashPattern=4 5;fontFamily=Arial;fontSize=13;fontColor=#344054;align=center;verticalAlign=top;spacingTop=28;" value="&lt;b&gt;TRUNG TÂM DỮ LIỆU / MÁY CHỦ TRIỂN KHAI&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;&lt;br&gt;LAN / CLOUD" vertex="1">
+          <mxGeometry height="535" width="1000" x="310" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="proxy" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#E0F2FE;strokeColor=#0284C7;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Web server / Reverse proxy&lt;/b&gt;&lt;br&gt;Nginx hoặc Vite dev server" vertex="1">
+          <mxGeometry height="78" width="260" x="545" y="287" as="geometry" />
+        </mxCell>
+        <mxCell id="backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#ECFDF3;strokeColor=#16A34A;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Server ứng dụng&lt;/b&gt;&lt;br&gt;FastAPI Backend&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;REST API, xác thực JWT, RBAC&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="235" x="557.5" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="worker" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFF7ED;strokeColor=#F97316;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Server xử lý nền&lt;/b&gt;&lt;br&gt;Job worker, OCR, index tài liệu&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;Tesseract, embedding pipeline&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="235" x="860" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="mysql" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EEF2FF;strokeColor=#4F46E5;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;CSDL nghiệp vụ&lt;/b&gt;&lt;br&gt;MySQL 8.0 - rag_db&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;người dùng, tài liệu, phiên chat&lt;/font&gt;" vertex="1">
+          <mxGeometry height="92" width="215" x="440" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="chroma" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EEF2FF;strokeColor=#4F46E5;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Kho vector&lt;/b&gt;&lt;br&gt;ChromaDB storage&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;embedding và chỉ mục RAG&lt;/font&gt;" vertex="1">
+          <mxGeometry height="92" width="215" x="710" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="files" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EEF2FF;strokeColor=#4F46E5;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Kho tệp tài liệu&lt;/b&gt;&lt;br&gt;uploads/personal, department, SQP&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;PDF, DOCX, ảnh scan&lt;/font&gt;" vertex="1">
+          <mxGeometry height="92" width="215" x="990" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFF1F2;strokeColor=#E11D48;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Server AI nội bộ&lt;/b&gt;&lt;br&gt;Ollama&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;qwen2.5:3b-instruct&lt;br&gt;Sinh câu trả lời RAG&lt;/font&gt;" vertex="1">
+          <mxGeometry height="120" width="205" x="1260" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="external" parent="1" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;fillColor=#FFF3C4;strokeColor=#F3D37B;dashed=1;dashPattern=4 5;fontFamily=Arial;fontSize=13;fontColor=#172033;" value="&lt;b&gt;Hệ thống ngoài&lt;/b&gt;&lt;br&gt;SSO, thư mục người dùng,&lt;br&gt;API tích hợp" vertex="1">
+          <mxGeometry height="160" width="300" x="1090" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="userBox" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="proxy" value="HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="proxy" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="backend" value="REST API">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="backend" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="worker" value="Job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="backend" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;" target="mysql" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="backend" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;" target="chroma" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="worker" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#344054;" target="files" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="worker" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;dashPattern=7 6;strokeWidth=2;strokeColor=#667085;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="ollama" value="RAG inference">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="worker" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;dashPattern=7 6;strokeWidth=2;strokeColor=#667085;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="external" value="SSO / đồng bộ danh mục">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="files" style="endArrow=classic;html=1;rounded=0;dashed=1;dashPattern=7 6;strokeWidth=2;strokeColor=#667085;fontFamily=Arial;fontSize=13;fontColor=#344054;" target="worker" value="OCR, tách chunk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { waitForJob } from "../api";
-import { FileText, RefreshCw, Search, Share2, Trash2, Upload, PencilLine, X } from "lucide-react";
+import { FileText, RefreshCw, Search, Share2, Trash2, Upload, PencilLine, X, Tag } from "lucide-react";
+import TagPicker, { type DocumentTag } from "../components/TagPicker";
 
 type Department = {
   id: number;
@@ -15,6 +16,7 @@ type DepartmentDocument = {
   department_id: number | null;
   is_indexed?: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -40,6 +42,7 @@ type ShareRecord = {
 type EditForm = {
   filename: string;
   department_id: string;
+  tag_ids: number[];
 };
 
 export default function AdminDocuments() {
@@ -52,9 +55,10 @@ export default function AdminDocuments() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [editingDoc, setEditingDoc] = useState<DepartmentDocument | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ filename: "", department_id: "" });
+  const [editForm, setEditForm] = useState<EditForm>({ filename: "", department_id: "", tag_ids: [] });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobMessage, setJobMessage] = useState("");
+  const [uploadTagIds, setUploadTagIds] = useState<number[]>([]);
 
   const departmentNameMap = useMemo(
     () => new Map(departments.map((department) => [department.id, department.name])),
@@ -126,6 +130,7 @@ export default function AdminDocuments() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("tag_ids", uploadTagIds.join(","));
       const response = await api.post("/admin/documents/department/upload", formData, {
         params: { department_id: Number(selectedDepartmentId) },
       });
@@ -165,6 +170,7 @@ export default function AdminDocuments() {
     setEditForm({
       filename: doc.filename,
       department_id: doc.department_id ? String(doc.department_id) : "",
+      tag_ids: (doc.tags ?? []).map((tag) => tag.id),
     });
   };
 
@@ -175,6 +181,7 @@ export default function AdminDocuments() {
       await api.put(`/admin/documents/department/${editingDoc.id}`, {
         filename: editForm.filename || null,
         department_id: editForm.department_id ? Number(editForm.department_id) : null,
+        tag_ids: editForm.tag_ids,
       });
       setEditingDoc(null);
       await refreshAll();
@@ -247,9 +254,14 @@ export default function AdminDocuments() {
               <input
                 type="file"
                 className="hidden"
+                accept=".pdf,.docx"
                 onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
               />
             </label>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Tag cho tài liệu</p>
+            <TagPicker selectedIds={uploadTagIds} onChange={setUploadTagIds} compact />
           </div>
           <button
             onClick={() => void handleUpload()}
@@ -298,6 +310,7 @@ export default function AdminDocuments() {
             <tr>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Tài liệu</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Phòng ban</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-600">Tag</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Index</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày tải</th>
               <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
@@ -316,6 +329,17 @@ export default function AdminDocuments() {
                 </td>
                 <td className="px-4 py-3 text-gray-600">
                   {document.department_id ? departmentNameMap.get(document.department_id) ?? `#${document.department_id}` : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex max-w-xs flex-wrap gap-1.5">
+                    {(document.tags ?? []).map((tag) => (
+                      <span key={tag.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                        <Tag className="h-3 w-3" />
+                        {tag.name}
+                      </span>
+                    ))}
+                    {(document.tags ?? []).length === 0 && <span className="text-xs text-gray-400">Chưa gắn</span>}
+                  </div>
                 </td>
                 <td className="px-4 py-3">{renderIndexBadge(document)}</td>
                 <td className="px-4 py-3 text-gray-500">{document.uploaded_at?.slice(0, 10)}</td>
@@ -401,7 +425,7 @@ export default function AdminDocuments() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-lg text-gray-900">Chỉnh sửa tài liệu</h3>
-                <p className="text-sm text-gray-500">Đổi tên file hoặc gán sang phòng ban khác.</p>
+                <p className="text-sm text-gray-500">Đổi tên file, gán phòng ban và tag.</p>
               </div>
               <button onClick={() => setEditingDoc(null)} className="p-2 rounded-lg hover:bg-gray-100">
                 <X className="w-5 h-5" />
@@ -425,6 +449,13 @@ export default function AdminDocuments() {
                 </option>
               ))}
             </select>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Tag tài liệu</p>
+              <TagPicker
+                selectedIds={editForm.tag_ids}
+                onChange={(ids) => setEditForm((current) => ({ ...current, tag_ids: ids }))}
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setEditingDoc(null)} className="px-4 py-2.5 rounded-lg border text-sm text-gray-600">
                 Hủy

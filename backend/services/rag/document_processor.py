@@ -12,6 +12,7 @@ from langchain_community.document_loaders import Docx2txtLoader, PyMuPDFLoader
 from langchain_core.documents import Document as LCDocument
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from config import RAG_CHUNK_SIZE
 from rag_engine.models import DocumentIndexMetadata
 
 try:
@@ -726,12 +727,13 @@ def _append_parent_children(
     parent_meta: dict,
     parent_header: str,
     splitter: RecursiveCharacterTextSplitter,
+    chunk_size: int = _ADMIN_CHUNK_SIZE,
 ) -> None:
     parent_text = parent_text.strip()
     if not parent_text:
         return
 
-    child_texts = [parent_text] if len(parent_text) <= _ADMIN_CHUNK_SIZE else splitter.split_text(parent_text)
+    child_texts = [parent_text] if len(parent_text) <= chunk_size else splitter.split_text(parent_text)
     child_count = len(child_texts)
     for index, child_text in enumerate(child_texts):
         content = child_text
@@ -748,6 +750,7 @@ def _append_parent_children(
 def _split_administrative(
     pages: list[LCDocument],
     metadata: DocumentIndexMetadata | None = None,
+    chunk_size: int | None = None,
 ) -> list[LCDocument]:
     full_text = "\n".join(page.page_content for page in pages)
     base_meta = pages[0].metadata if pages else {}
@@ -755,9 +758,10 @@ def _split_administrative(
     chapter_matches = _chapter_heading_matches(full_text)
     article_matches = _article_heading_matches(full_text)
 
+    safe_chunk_size = chunk_size or _ADMIN_CHUNK_SIZE
     fallback_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=_ADMIN_CHUNK_SIZE,
-        chunk_overlap=_ADMIN_CHUNK_OVERLAP,
+        chunk_size=safe_chunk_size,
+        chunk_overlap=min(_ADMIN_CHUNK_OVERLAP, max(0, safe_chunk_size // 5)),
         separators=_NORMAL_SEPARATORS,
     )
 
@@ -766,7 +770,7 @@ def _split_administrative(
         preamble = full_text[: article_matches[0].start()].strip()
         if preamble:
             parent_meta = _make_parent_metadata(dict(base_meta), doc_id, 0, "preamble")
-            _append_parent_children(result, preamble, parent_meta, "Phần mở đầu", fallback_splitter)
+            _append_parent_children(result, preamble, parent_meta, "Phần mở đầu", fallback_splitter, safe_chunk_size)
 
         for parent_index, match in enumerate(article_matches, start=1):
             next_start = article_matches[parent_index].start() if parent_index < len(article_matches) else len(full_text)
@@ -787,7 +791,7 @@ def _split_administrative(
                 article_number=article_number,
                 article_title=article_title,
             )
-            _append_parent_children(result, article_text, parent_meta, article_header, fallback_splitter)
+            _append_parent_children(result, article_text, parent_meta, article_header, fallback_splitter, safe_chunk_size)
 
         return result
 
@@ -809,13 +813,13 @@ def _split_administrative(
                 clause_number=clause_number,
                 clause_title=clause_title,
             )
-            _append_parent_children(result, clause_text, parent_meta, clause_header, fallback_splitter)
+            _append_parent_children(result, clause_text, parent_meta, clause_header, fallback_splitter, safe_chunk_size)
         return result
 
     list_sections = _list_section_heading_matches(full_text)
     list_items = _list_item_heading_matches(full_text)
     if list_sections or list_items:
-        return _split_list_structured(full_text, base_meta, doc_id, fallback_splitter)
+        return _split_list_structured(full_text, base_meta, doc_id, fallback_splitter, safe_chunk_size)
 
     return result if result else [LCDocument(page_content=full_text[:2000], metadata=dict(base_meta))]
 
@@ -825,6 +829,7 @@ def _split_list_structured(
     base_meta: dict,
     doc_id: int,
     splitter: RecursiveCharacterTextSplitter,
+    chunk_size: int = _ADMIN_CHUNK_SIZE,
 ) -> list[LCDocument]:
     section_matches = _list_section_heading_matches(full_text)
     item_matches = _list_item_heading_matches(full_text)
@@ -835,7 +840,7 @@ def _split_list_structured(
     preamble = full_text[: parents[0].start()].strip() if parents else ""
     if preamble:
         parent_meta = _make_parent_metadata(dict(base_meta), doc_id, 0, "preamble")
-        _append_parent_children(result, preamble, parent_meta, "Phần mở đầu", splitter)
+        _append_parent_children(result, preamble, parent_meta, "Phần mở đầu", splitter, chunk_size)
 
     for parent_index, match in enumerate(parents, start=1):
         next_start = parents[parent_index].start() if parent_index < len(parents) else len(full_text)
@@ -886,21 +891,25 @@ def _split_list_structured(
                 list_point_title=point_title,
             )
 
-        _append_parent_children(result, parent_text, parent_meta, parent_header, splitter)
+        _append_parent_children(result, parent_text, parent_meta, parent_header, splitter, chunk_size)
 
     return result
 
 
-def _split_normal(pages: list[LCDocument]) -> list[LCDocument]:
+def _split_normal(pages: list[LCDocument], chunk_size: int | None = None) -> list[LCDocument]:
+    safe_chunk_size = chunk_size or _NORMAL_CHUNK_SIZE
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=_NORMAL_CHUNK_SIZE,
-        chunk_overlap=_NORMAL_CHUNK_OVERLAP,
+        chunk_size=safe_chunk_size,
+        chunk_overlap=min(_NORMAL_CHUNK_OVERLAP, max(0, safe_chunk_size // 5)),
         separators=_NORMAL_SEPARATORS,
     )
     return splitter.split_documents(pages)
 
 
 class DocumentProcessor:
+    def __init__(self, chunk_size: int | None = None):
+        self.chunk_size = chunk_size or RAG_CHUNK_SIZE
+
     def process_pdf(
         self,
         file_path: str,
@@ -991,7 +1000,11 @@ class DocumentProcessor:
     ) -> list[LCDocument]:
         sample_text = "\n".join(page.page_content for page in pages[:5])
         is_admin = force_admin_chunking or _is_administrative_text(sample_text)
-        splits = _split_administrative(pages, metadata) if is_admin else _split_normal(pages)
+        splits = (
+            _split_administrative(pages, metadata, self.chunk_size)
+            if is_admin
+            else _split_normal(pages, self.chunk_size)
+        )
         chunk_strategy = "administrative" if is_admin else "normal"
 
         chroma_metadata = metadata.as_chroma_metadata(chunk_strategy)

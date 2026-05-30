@@ -62,7 +62,7 @@ export default function AdminSystem() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Bảo Trì & Cấu Hình Hệ Thống</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Bảo Trì Hệ Thống</h1>
 
       {/* Vector DB Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

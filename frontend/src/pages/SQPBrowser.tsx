@@ -154,7 +154,7 @@ export default function SQPBrowser() {
             <label className="flex-1 min-w-64 border rounded-lg px-3 py-2.5 text-sm bg-gray-50 cursor-pointer flex items-center justify-between gap-3">
               <span className="truncate text-gray-600">{selectedFile ? selectedFile.name : "Chọn file..."}</span>
               <span className="text-xs text-blue-600 font-medium whitespace-nowrap">Browse</span>
-              <input type="file" className="hidden" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+              <input type="file" className="hidden" accept=".pdf,.docx" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
             </label>
             <button
               onClick={() => void handleUpload()}

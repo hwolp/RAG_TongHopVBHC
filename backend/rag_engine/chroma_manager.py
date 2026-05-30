@@ -1,4 +1,5 @@
 import re
+from threading import Lock
 from typing import Optional
 
 try:
@@ -18,6 +19,8 @@ from config import (
     EMBEDDING_MODEL,
     EMBEDDING_MODEL_ALLOW_DOWNLOAD,
     EMBEDDING_MODEL_CACHE_DIR,
+    RAG_CHUNK_SIZE,
+    RAG_TOP_K,
 )
 from contracts.rag import VectorStoreInterface
 from rag_engine.models import DocumentIndexMetadata
@@ -27,6 +30,7 @@ from services.rag.document_processor import (
     _split_administrative,
     _split_normal,
 )
+from services.admin.config_service import get_rag_settings
 
 _SUMMARY_QUERY_PATTERNS = [
     r"\bt[oó]m\s+t[aắ]t\b",
@@ -54,6 +58,8 @@ _ARTICLE_QUERY_PATTERN = re.compile(
     r"\bđi[eềệ]u\s+(\d+)\b",
     re.IGNORECASE,
 )
+_EMBEDDINGS_CACHE: HuggingFaceEmbeddings | None = None
+_EMBEDDINGS_LOCK = Lock()
 
 
 def _build_chroma_filter(conditions: dict) -> Optional[dict]:
@@ -122,13 +128,31 @@ def _clean_structure_title(value: str) -> str:
 
 
 class ChromaDBManager(VectorStoreInterface):
-    def __init__(self, document_processor: DocumentProcessor | None = None):
+    def __init__(self, document_processor: DocumentProcessor | None = None, db=None):
+        rag_settings = get_rag_settings(db) if db is not None else {
+            "top_k": RAG_TOP_K,
+            "chunk_size": RAG_CHUNK_SIZE,
+        }
+        self.default_top_k = rag_settings["top_k"]
+        self.chunk_size = rag_settings["chunk_size"]
         self.persist_directory = CHROMA_PERSIST_DIR
         self.embeddings = self._load_embeddings()
         self.vectordb = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
-        self.document_processor = document_processor or DocumentProcessor()
+        self.document_processor = document_processor or DocumentProcessor(chunk_size=self.chunk_size)
 
     def _load_embeddings(self) -> HuggingFaceEmbeddings:
+        global _EMBEDDINGS_CACHE
+        if _EMBEDDINGS_CACHE is not None:
+            return _EMBEDDINGS_CACHE
+
+        with _EMBEDDINGS_LOCK:
+            if _EMBEDDINGS_CACHE is not None:
+                return _EMBEDDINGS_CACHE
+
+            _EMBEDDINGS_CACHE = self._create_embeddings()
+            return _EMBEDDINGS_CACHE
+
+    def _create_embeddings(self) -> HuggingFaceEmbeddings:
         model_options = {
             "model_name": EMBEDDING_MODEL,
             "cache_folder": EMBEDDING_MODEL_CACHE_DIR,
@@ -199,10 +223,11 @@ class ChromaDBManager(VectorStoreInterface):
         user_id: int,
         user_dept_id: int,
         search_scope: str = "personal",
-        k: int = _DEFAULT_RETRIEVAL_K,
+        k: int | None = None,
         session_id: Optional[int] = None,
         extra_doc_ids: Optional[list[int]] = None,
     ) -> tuple[str, list[str]]:
+        k = k or self.default_top_k
         scope_filter = self._scope_filter(user_id, user_dept_id, search_scope, session_id)
         if _is_structure_query(query):
             structure_context, structure_sources = self._structure_context(scope_filter, extra_doc_ids)

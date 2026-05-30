@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -9,8 +9,20 @@ from services.documents import document_service, folder_service
 
 class UpdateSQPDocumentRequest(BaseModel):
     filename: str | None = None
+    tag_ids: list[int] | None = None
 
 router = APIRouter(tags=["Tài liệu"])
+
+
+def parse_tag_ids(tag_ids: str | None) -> list[int]:
+    if not tag_ids:
+        return []
+    result: list[int] = []
+    for raw in tag_ids.split(","):
+        value = raw.strip()
+        if value:
+            result.append(int(value))
+    return result
 
 
 @router.get("/documents/tree")
@@ -26,8 +38,13 @@ def list_personal_documents(search: str = "", db: Session = Depends(get_db), use
 
 
 @router.post("/documents/personal")
-async def upload_personal_document(file: UploadFile = File(...), db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return await document_service.upload_personal_document(db, user["id"], file)
+async def upload_personal_document(
+    file: UploadFile = File(...),
+    tag_ids: str = Form(""),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return await document_service.upload_personal_document(db, user["id"], file, parse_tag_ids(tag_ids))
 
 
 @router.delete("/documents/personal/{doc_id}")
@@ -41,8 +58,13 @@ def list_department_documents(search: str = "", db: Session = Depends(get_db), u
 
 
 @router.post("/documents/department")
-async def upload_department_document(file: UploadFile = File(...), db: Session = Depends(get_db), user: dict = Depends(require_manager)):
-    return await document_service.upload_department_document(db, user["id"], file)
+async def upload_department_document(
+    file: UploadFile = File(...),
+    tag_ids: str = Form(""),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_manager),
+):
+    return await document_service.upload_department_document(db, user["id"], file, parse_tag_ids(tag_ids))
 
 
 @router.delete("/documents/department/{doc_id}")
@@ -63,10 +85,11 @@ def browse_sqp_documents(search: str = "", db: Session = Depends(get_db), _: dic
 @router.post("/documents/sqp")
 async def upload_sqp_document(
     file: UploadFile = File(...),
+    tag_ids: str = Form(""),
     db: Session = Depends(get_db),
     admin_user: dict = Depends(require_admin),
 ):
-    return await document_service.upload_sqp_document_for_admin(db, admin_user["id"], file)
+    return await document_service.upload_sqp_document_for_admin(db, admin_user["id"], file, parse_tag_ids(tag_ids))
 
 
 @router.put("/documents/sqp/{doc_id}")
@@ -76,7 +99,9 @@ def update_sqp_document(
     db: Session = Depends(get_db),
     admin_user: dict = Depends(require_admin),
 ):
-    return document_service.update_sqp_document_for_admin(db, admin_user["id"], doc_id, payload.filename)
+    return document_service.update_sqp_document_for_admin(
+        db, admin_user["id"], doc_id, payload.filename, payload.tag_ids
+    )
 
 
 @router.delete("/documents/sqp/{doc_id}")
@@ -140,8 +165,13 @@ def legacy_list_my_documents(search: str = "", db: Session = Depends(get_db), us
 
 
 @router.post("/employee/documents/upload")
-async def legacy_upload_my_document(file: UploadFile = File(...), db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    return await document_service.upload_personal_document(db, user["id"], file)
+async def legacy_upload_my_document(
+    file: UploadFile = File(...),
+    tag_ids: str = Form(""),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    return await document_service.upload_personal_document(db, user["id"], file, parse_tag_ids(tag_ids))
 
 
 @router.delete("/employee/documents/{doc_id}")
@@ -167,8 +197,13 @@ def legacy_employee_department_docs(search: str = "", db: Session = Depends(get_
 
 
 @router.post("/manager/department/documents/upload")
-async def legacy_upload_department_doc(file: UploadFile = File(...), db: Session = Depends(get_db), user: dict = Depends(require_manager)):
-    return await document_service.upload_department_document(db, user["id"], file)
+async def legacy_upload_department_doc(
+    file: UploadFile = File(...),
+    tag_ids: str = Form(""),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_manager),
+):
+    return await document_service.upload_department_document(db, user["id"], file, parse_tag_ids(tag_ids))
 
 
 @router.delete("/manager/department/documents/{doc_id}")

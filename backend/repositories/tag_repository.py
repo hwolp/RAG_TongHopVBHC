@@ -16,7 +16,36 @@ class TagRepository:
         return self.db.query(models.Tag).filter(models.Tag.name == name).first()
 
     def list(self) -> list[models.Tag]:
-        return self.db.query(models.Tag).all()
+        return self.db.query(models.Tag).order_by(models.Tag.name.asc()).all()
+
+    def list_by_ids(self, tag_ids: list[int]) -> list[models.Tag]:
+        if not tag_ids:
+            return []
+        return self.db.query(models.Tag).filter(models.Tag.id.in_(tag_ids)).all()
+
+    def list_for_document(self, doc_id: int) -> list[models.Tag]:
+        return (
+            self.db.query(models.Tag)
+            .join(models.DocumentTag, models.DocumentTag.tag_id == models.Tag.id)
+            .filter(models.DocumentTag.document_id == doc_id)
+            .order_by(models.Tag.name.asc())
+            .all()
+        )
+
+    def list_for_documents(self, doc_ids: list[int]) -> dict[int, list[models.Tag]]:
+        if not doc_ids:
+            return {}
+        rows = (
+            self.db.query(models.DocumentTag.document_id, models.Tag)
+            .join(models.Tag, models.Tag.id == models.DocumentTag.tag_id)
+            .filter(models.DocumentTag.document_id.in_(doc_ids))
+            .order_by(models.Tag.name.asc())
+            .all()
+        )
+        result: dict[int, list[models.Tag]] = {doc_id: [] for doc_id in doc_ids}
+        for doc_id, tag in rows:
+            result.setdefault(doc_id, []).append(tag)
+        return result
 
     def get_document_tag(self, doc_id: int, tag_id: int) -> models.DocumentTag | None:
         return (
@@ -38,6 +67,12 @@ class TagRepository:
         self.db.add(link)
         self.db.commit()
         return link
+
+    def replace_document_tags(self, doc_id: int, tag_ids: list[int]) -> None:
+        self.db.query(models.DocumentTag).filter(models.DocumentTag.document_id == doc_id).delete()
+        for tag_id in tag_ids:
+            self.db.add(models.DocumentTag(document_id=doc_id, tag_id=tag_id))
+        self.db.commit()
 
     def commit(self) -> None:
         self.db.commit()

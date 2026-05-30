@@ -36,7 +36,7 @@ class IndexDocumentJobHandler(JobHandler):
         force_admin_chunking = bool(payload.get("force_admin_chunking"))
         scope = doc.scope.value if hasattr(doc.scope, "value") else str(doc.scope)
         ext = (doc.filename or "").lower()
-        manager = ChromaDBManager()
+        manager = ChromaDBManager(db=self.db)
 
         job_service.update_progress(self.db, job, 20)
         if ext.endswith(".pdf"):
@@ -50,7 +50,7 @@ class IndexDocumentJobHandler(JobHandler):
                 doc.chat_session_id,
                 force_admin_chunking,
             )
-        elif ext.endswith((".docx", ".doc")):
+        elif ext.endswith(".docx"):
             chunks = manager.process_and_store_word(
                 doc.file_path,
                 doc.id,
@@ -98,7 +98,7 @@ class ChatAnswerJobHandler(JobHandler):
             return
 
         job_service.update_progress(self.db, job, 25)
-        manager = ChromaDBManager()
+        manager = ChromaDBManager(db=self.db)
         context, sources = manager.search_context_with_filter(
             query=question,
             user_id=user_id,
@@ -111,7 +111,7 @@ class ChatAnswerJobHandler(JobHandler):
         job_service.update_progress(self.db, job, 60)
         from rag_engine.chroma_manager import is_structure_context
 
-        answer = context if is_structure_context(context) else OllamaAI().generate_answer(
+        answer = context if is_structure_context(context) else OllamaAI(db=self.db).generate_answer(
             question,
             context,
             chat_history,

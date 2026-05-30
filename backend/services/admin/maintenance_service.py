@@ -4,14 +4,15 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from config import UPLOAD_DIR_DEPARTMENT, UPLOAD_DIR_PERSONAL, UPLOAD_DIR_SQP
+from services.admin.config_service import get_upload_dirs
 from repositories.document_repository import DocumentRepository
 from repositories.maintenance_repository import MaintenanceRepository
 
 
-def _safe_upload_roots() -> list[Path]:
+def _safe_upload_roots(db: Session) -> list[Path]:
     roots = []
-    for configured in (UPLOAD_DIR_PERSONAL, UPLOAD_DIR_DEPARTMENT, UPLOAD_DIR_SQP):
+    upload_dirs = get_upload_dirs(db)
+    for configured in upload_dirs.values():
         root = Path(configured).resolve()
         if str(root) == root.anchor or len(root.parts) < 3:
             continue
@@ -37,10 +38,10 @@ def _clear_upload_root(root: Path) -> tuple[int, list[str]]:
     return deleted, errors
 
 
-def _delete_known_files(paths: list[str]) -> tuple[int, list[str]]:
+def _delete_known_files(db: Session, paths: list[str]) -> tuple[int, list[str]]:
     deleted = 0
     errors = []
-    roots = _safe_upload_roots()
+    roots = _safe_upload_roots(db)
 
     for raw_path in paths:
         if not raw_path:
@@ -62,18 +63,18 @@ def clear_collection_data(db: Session) -> dict:
     """Reset toàn bộ dữ liệu RAG: vector index, tài liệu upload, chat và job nền."""
     from rag_engine.chroma_manager import ChromaDBManager
 
-    manager = ChromaDBManager()
+    manager = ChromaDBManager(db=db)
     manager.admin_clear_db()
 
     documents = DocumentRepository(db)
     document_paths = documents.list_file_paths()
     version_paths = documents.list_version_paths()
-    deleted_files, file_errors = _delete_known_files(document_paths + version_paths)
+    deleted_files, file_errors = _delete_known_files(db, document_paths + version_paths)
 
     counts = MaintenanceRepository(db).clear_rag_data()
 
     deleted_upload_entries = 0
-    for root in _safe_upload_roots():
+    for root in _safe_upload_roots(db):
         root_deleted, root_errors = _clear_upload_root(root)
         deleted_upload_entries += root_deleted
         file_errors.extend(root_errors)

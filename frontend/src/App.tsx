@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import AdminUsers from './pages/AdminUsers';
 import AdminDocuments from './pages/AdminDocuments';
 import AdminSystem from './pages/AdminSystem';
+import AdminConfigs from './pages/AdminConfigs';
 import ManagerDocs from './pages/ManagerDocs';
 import SQPBrowser from './pages/SQPBrowser';
 import { useAuth } from './hooks/useAuth';
@@ -41,6 +42,7 @@ export default function App() {
         {/* Admin */}
         <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminUsers /></Layout></ProtectedRoute>} />
         <Route path="/admin/documents" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminDocuments /></Layout></ProtectedRoute>} />
+        <Route path="/admin/configs" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminConfigs /></Layout></ProtectedRoute>} />
         <Route path="/admin/system" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminSystem /></Layout></ProtectedRoute>} />
 
         {/* Manager */}

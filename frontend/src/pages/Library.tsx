@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import api, { waitForJob } from "../api";
 import {
   FileText, Upload, Trash2, Download, Search,
-  LayoutGrid, List, RefreshCw,
+  LayoutGrid, List, RefreshCw, Tag, PencilLine, X,
 } from "lucide-react";
 import FolderTree, { type FolderTreeData } from "../components/FolderTree";
+import TagPicker, { type DocumentTag } from "../components/TagPicker";
 
 type Doc = {
   id: number;
@@ -13,6 +14,7 @@ type Doc = {
   is_indexed: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
   uploaded_at: string;
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -29,6 +31,9 @@ export default function Library() {
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const [uploadTagIds, setUploadTagIds] = useState<number[]>([]);
+  const [editingTagsDoc, setEditingTagsDoc] = useState<Doc | null>(null);
+  const [editingTagIds, setEditingTagIds] = useState<number[]>([]);
 
   const fetchDocs = async () => {
     try {
@@ -101,6 +106,7 @@ export default function Library() {
     setUploading(true);
     const fd = new FormData();
     fd.append("file", e.target.files[0]);
+    fd.append("tag_ids", uploadTagIds.join(","));
     try {
       const r = await api.post("/employee/documents/upload", fd);
       await fetchDocs();
@@ -129,6 +135,19 @@ export default function Library() {
     window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank");
   };
 
+  const openTagEditor = (doc: Doc) => {
+    setEditingTagsDoc(doc);
+    setEditingTagIds((doc.tags ?? []).map((tag) => tag.id));
+  };
+
+  const saveDocumentTags = async () => {
+    if (!editingTagsDoc) return;
+    await api.put(`/documents/${editingTagsDoc.id}/tags`, { tag_ids: editingTagIds });
+    setEditingTagsDoc(null);
+    await fetchDocs();
+    if (viewMode === "tree") await fetchTree();
+  };
+
   return (
     <div className="neo-page max-w-6xl">
       {/* Header */}
@@ -154,9 +173,14 @@ export default function Library() {
           <label className="neo-button neo-button-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             {uploading ? "Đang tải..." : "Tải lên"}
-            <input type="file" className="hidden" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} />
+            <input type="file" className="hidden" accept=".pdf,.docx" onChange={handleUpload} />
           </label>
         </div>
+      </div>
+
+      <div className="neo-panel-compact p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tag mặc định khi tải lên</p>
+        <TagPicker selectedIds={uploadTagIds} onChange={setUploadTagIds} compact />
       </div>
 
       {/* Search (grid mode only) */}
@@ -200,6 +224,15 @@ export default function Library() {
                 </div>
                 <h3 className="font-medium text-gray-900 truncate mb-1" title={d.filename}>{d.filename}</h3>
                 <p className="text-xs text-gray-400 mb-4">{d.uploaded_at?.slice(0, 10)}</p>
+                <div className="mb-4 flex min-h-7 flex-wrap gap-1.5">
+                  {(d.tags ?? []).map((tag) => (
+                    <span key={tag.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                      <Tag className="h-3 w-3" />
+                      {tag.name}
+                    </span>
+                  ))}
+                  {(d.tags ?? []).length === 0 && <span className="text-[11px] text-gray-400">Chưa gắn tag</span>}
+                </div>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
                   <button onClick={() => handleDownload(d.id)}
                     className="neo-button flex-1 !min-h-0 py-1.5 text-xs text-[#006666]">
@@ -208,6 +241,11 @@ export default function Library() {
                   <button onClick={() => handleDelete(d.id)}
                     className="neo-icon-button !h-8 !w-8 text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => openTagEditor(d)}
+                    className="neo-icon-button !h-8 !w-8 text-blue-500"
+                    title="Sửa tag">
+                    <PencilLine className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -255,6 +293,31 @@ export default function Library() {
           {!treeLoading && !treeData && (
             <p className="text-center py-8 text-gray-400 text-sm">Không thể tải dữ liệu</p>
           )}
+        </div>
+      )}
+
+      {editingTagsDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Gắn tag tài liệu</h3>
+                <p className="mt-1 truncate text-sm text-gray-500">{editingTagsDoc.filename}</p>
+              </div>
+              <button onClick={() => setEditingTagsDoc(null)} className="rounded-lg p-2 hover:bg-gray-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <TagPicker selectedIds={editingTagIds} onChange={setEditingTagIds} />
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setEditingTagsDoc(null)} className="rounded-lg border px-4 py-2.5 text-sm text-gray-600">
+                Hủy
+              </button>
+              <button onClick={() => void saveDocumentTags()} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700">
+                Lưu tag
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

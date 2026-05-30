@@ -22,26 +22,38 @@ class VectorAdminService:
     def reindex(self, db: Session) -> dict:
         from rag_engine.chroma_manager import ChromaDBManager
 
-        manager = ChromaDBManager()
+        manager = ChromaDBManager(db=db)
         manager.admin_clear_db()
 
         documents = DocumentRepository(db)
         docs = documents.list_unindexed()
         total_chunks = 0
+        reindexed_docs = 0
         for doc in docs:
-            if not doc.file_path.lower().endswith(".pdf"):
+            file_path = (doc.file_path or "").lower()
+            if file_path.endswith(".pdf"):
+                chunks = manager.process_and_store_pdf(
+                    doc.file_path,
+                    doc.id,
+                    doc.owner_id or 0,
+                    doc.department_id or -1,
+                    doc.scope.value if hasattr(doc.scope, "value") else doc.scope,
+                    "",
+                )
+            elif file_path.endswith(".docx"):
+                chunks = manager.process_and_store_word(
+                    doc.file_path,
+                    doc.id,
+                    doc.owner_id or 0,
+                    doc.department_id or -1,
+                    doc.scope.value if hasattr(doc.scope, "value") else doc.scope,
+                    "",
+                )
+            else:
                 continue
-
-            chunks = manager.process_and_store_pdf(
-                doc.file_path,
-                doc.id,
-                doc.owner_id or 0,
-                doc.department_id or -1,
-                doc.scope.value if hasattr(doc.scope, "value") else doc.scope,
-                "",
-            )
             doc.is_indexed = True
+            reindexed_docs += 1
             total_chunks += chunks
 
         documents.commit()
-        return {"status": "success", "reindexed_docs": len(docs), "total_chunks": total_chunks}
+        return {"status": "success", "reindexed_docs": reindexed_docs, "total_chunks": total_chunks}

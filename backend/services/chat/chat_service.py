@@ -230,7 +230,7 @@ class ChatAnswerService:
     ) -> RetrievedContext:
         from rag_engine.chroma_manager import ChromaDBManager
 
-        manager = ChromaDBManager()
+        manager = ChromaDBManager(db=self.db)
         context, sources = manager.search_context_with_filter(
             query=question,
             user_id=user_id,
@@ -249,7 +249,7 @@ class ChatAnswerService:
         if is_structure_context(retrieved.context):
             return GeneratedAnswer(answer=retrieved.context, sources=retrieved.sources)
 
-        answer = OllamaAI().generate_answer(question, retrieved.context, chat_history)
+        answer = OllamaAI(db=self.db).generate_answer(question, retrieved.context, chat_history)
         return GeneratedAnswer(answer=answer, sources=retrieved.sources)
 
     def _require_user(self, user_id: int) -> models.User:

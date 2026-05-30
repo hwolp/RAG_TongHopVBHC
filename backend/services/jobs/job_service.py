@@ -81,7 +81,7 @@ def create_index_job(
     force_admin_chunking: bool = False,
 ) -> models.BackgroundJob | None:
     ext = (doc.filename or "").lower()
-    if not ext.endswith((".pdf", ".docx", ".doc")):
+    if not ext.endswith((".pdf", ".docx")):
         return None
     return create_job(
         db=db,

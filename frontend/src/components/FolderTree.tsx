@@ -14,7 +14,9 @@ import {
   Square,
   BadgeCheck,
   Clock,
+  Tag,
 } from "lucide-react";
+import type { DocumentTag } from "./TagPicker";
 
 export type FolderDoc = {
   id: number;
@@ -25,6 +27,7 @@ export type FolderDoc = {
   uploaded_at: string;
   owner_id?: number;
   department_id?: number;
+  tags?: DocumentTag[];
 };
 
 export type FolderTreeData = {
@@ -141,7 +144,15 @@ function DocRow({
 
       <div className="flex-1 min-w-0">
         <p className="truncate font-medium text-gray-700 text-xs">{doc.filename}</p>
-        <p className="text-[10px] text-gray-400">{doc.uploaded_at.slice(0, 10)}</p>
+        <div className="flex flex-wrap items-center gap-1">
+          <p className="text-[10px] text-gray-400">{doc.uploaded_at.slice(0, 10)}</p>
+          {(doc.tags ?? []).slice(0, 2).map((tag) => (
+            <span key={tag.id} className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+              <Tag className="h-2.5 w-2.5" />
+              {tag.name}
+            </span>
+          ))}
+        </div>
       </div>
 
       <IndexBadge doc={doc} />

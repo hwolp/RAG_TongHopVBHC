@@ -3,8 +3,10 @@ import api, { waitForJob } from "../api";
 import {
   Upload, Search, Send, RefreshCw, LayoutGrid, List,
   FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X,
+  Tag, PencilLine,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
+import TagPicker, { type DocumentTag } from "../components/TagPicker";
 
 type Department = {
   id: number;
@@ -31,6 +33,7 @@ type Doc = {
   owner_id: number;
   is_indexed?: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type Proposal = {
@@ -62,6 +65,9 @@ export default function ManagerDocs() {
   const [shareMode, setShareMode] = useState<"department" | "user">("department");
   const [sharing, setSharing] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const [uploadTagIds, setUploadTagIds] = useState<number[]>([]);
+  const [editingTagsDoc, setEditingTagsDoc] = useState<Doc | null>(null);
+  const [editingTagIds, setEditingTagIds] = useState<number[]>([]);
 
   const refreshShares = async () => {
     try {
@@ -140,6 +146,7 @@ export default function ManagerDocs() {
     setJobMessage("");
     const fd = new FormData();
     fd.append("file", e.target.files[0]);
+    fd.append("tag_ids", uploadTagIds.join(","));
     try {
       const r = await api.post("/manager/department/documents/upload", fd);
       await fetchDocs();
@@ -225,6 +232,19 @@ export default function ManagerDocs() {
     }
   };
 
+  const openTagEditor = (doc: Doc) => {
+    setEditingTagsDoc(doc);
+    setEditingTagIds((doc.tags ?? []).map((tag) => tag.id));
+  };
+
+  const saveDocumentTags = async () => {
+    if (!editingTagsDoc) return;
+    await api.put(`/documents/${editingTagsDoc.id}/tags`, { tag_ids: editingTagIds });
+    setEditingTagsDoc(null);
+    await fetchDocs();
+    if (viewMode === "tree") await fetchTree();
+  };
+
   const proposedDocIds = new Set(proposals.map(p => p.document_id));
 
   const renderIndexBadge = (doc: Doc) => {
@@ -272,9 +292,14 @@ export default function ManagerDocs() {
           <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer shadow-sm transition">
             <Upload className="w-4 h-4" />
             {uploading ? "Đang tải..." : "Tải lên"}
-            <input type="file" className="hidden" onChange={handleUpload} />
+            <input type="file" className="hidden" accept=".pdf,.docx" onChange={handleUpload} />
           </label>
         </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-5 shadow-sm">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Tag mặc định khi tải lên</p>
+        <TagPicker selectedIds={uploadTagIds} onChange={setUploadTagIds} compact />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -430,6 +455,7 @@ export default function ManagerDocs() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-gray-600">Tên file</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-600">Tag</th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-600">Trạng thái</th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày tải</th>
                 <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
@@ -442,6 +468,17 @@ export default function ManagerDocs() {
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
                       <span className="truncate max-w-xs" title={d.filename}>{d.filename}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex max-w-xs flex-wrap gap-1.5">
+                      {(d.tags ?? []).map((tag) => (
+                        <span key={tag.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                          <Tag className="h-3 w-3" />
+                          {tag.name}
+                        </span>
+                      ))}
+                      {(d.tags ?? []).length === 0 && <span className="text-xs text-gray-400">Chưa gắn</span>}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -474,6 +511,11 @@ export default function ManagerDocs() {
                       <button onClick={() => handleDelete(d.id)}
                         className="p-1.5 rounded-lg hover:bg-red-50 text-red-500">
                         <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => openTagEditor(d)}
+                        className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500"
+                        title="Sửa tag">
+                        <PencilLine className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -547,6 +589,31 @@ export default function ManagerDocs() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {editingTagsDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Gắn tag tài liệu phòng ban</h3>
+                <p className="mt-1 truncate text-sm text-gray-500">{editingTagsDoc.filename}</p>
+              </div>
+              <button onClick={() => setEditingTagsDoc(null)} className="rounded-lg p-2 hover:bg-gray-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <TagPicker selectedIds={editingTagIds} onChange={setEditingTagIds} />
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setEditingTagsDoc(null)} className="rounded-lg border px-4 py-2.5 text-sm text-gray-600">
+                Hủy
+              </button>
+              <button onClick={() => void saveDocumentTags()} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700">
+                Lưu tag
+              </button>
+            </div>
           </div>
         </div>
       )}

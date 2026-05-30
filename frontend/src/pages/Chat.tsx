@@ -3,6 +3,7 @@ import api, { waitForJob } from "../api";
 import {
   Send, Bot, User, Plus, Trash2, MessageSquare,
   FolderOpen, X, Upload, RefreshCw, Pencil, Check,
+  ChevronLeft, ChevronRight, ChevronDown,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
 
@@ -55,6 +56,8 @@ export default function Chat() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  const [collapsedBars, setCollapsedBars] = useState<Record<string, boolean>>({});
 
   // File picker modal
   const [showPicker, setShowPicker] = useState(false);
@@ -77,6 +80,9 @@ export default function Chat() {
   const waitingJobsRef = useRef<Set<number>>(new Set());
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const toggleBar = (key: string) => {
+    setCollapsedBars(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // ── Sessions ────────────────────────────────────────────────────────────────
   const fetchSessions = useCallback(async () => {
@@ -426,22 +432,38 @@ export default function Chat() {
   return (
     <div className="flex h-full">
       {/* ── Sidebar Sessions ───────────────────────────────────────────────── */}
-      <div className="w-64 bg-[#e7e5e4] border-r border-white/60 flex flex-col flex-shrink-0">
-        <div className="p-3 border-b border-white/60">
-          <button onClick={handleNewSession} className="neo-button neo-button-primary w-full">
-            <Plus className="w-4 h-4" /> Phiên hội thoại mới
+      <div className={`${sessionsCollapsed ? "w-14" : "w-64"} bg-[#e7e5e4] border-r border-white/60 flex flex-col flex-shrink-0 transition-[width] duration-200`}>
+        <div className="p-3 border-b border-white/60 space-y-2">
+          <button
+            onClick={() => setSessionsCollapsed(prev => !prev)}
+            className="neo-icon-button !w-full !h-9 text-[#006666]"
+            title={sessionsCollapsed ? "Mở danh sách phiên" : "Thu gọn danh sách phiên"}
+            aria-label={sessionsCollapsed ? "Mở danh sách phiên" : "Thu gọn danh sách phiên"}
+          >
+            {sessionsCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={handleNewSession}
+            className={`${sessionsCollapsed ? "neo-icon-button !w-full !h-10" : "neo-button neo-button-primary w-full"}`}
+            title="Phiên hội thoại mới"
+            aria-label="Phiên hội thoại mới"
+          >
+            <Plus className="w-4 h-4" />
+            {!sessionsCollapsed && "Phiên hội thoại mới"}
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {sessions.length === 0 && <p className="text-xs text-gray-400 text-center py-4">Chưa có phiên nào</p>}
+        <div className={`${sessionsCollapsed ? "p-2" : "p-2"} flex-1 overflow-y-auto space-y-1`}>
+          {sessions.length === 0 && !sessionsCollapsed && <p className="text-xs text-gray-400 text-center py-4">Chưa có phiên nào</p>}
           {sessions.map((s: any) => (
             <div key={s.id}
-              className={`flex items-center px-2 py-1.5 rounded-lg cursor-pointer text-sm group transition
+              className={`flex items-center rounded-lg cursor-pointer text-sm group transition
+                ${sessionsCollapsed ? "justify-center px-0 py-2" : "px-2 py-1.5"}
                 ${activeSession === s.id ? "neo-inset text-[#006666]" : "hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.34),inset_-3px_-3px_8px_rgba(255,255,255,0.75)]"}`}
               onClick={() => loadSession(s.id)}
+              title={s.title}
             >
-              <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 mr-2 mt-0.5" />
-              {renamingId === s.id ? (
+              <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${sessionsCollapsed ? "" : "mr-2 mt-0.5"}`} />
+              {!sessionsCollapsed && (renamingId === s.id ? (
                 <div className="flex-1 flex gap-1" onClick={e => e.stopPropagation()}>
                   <input
                     value={renameInput} autoFocus
@@ -453,15 +475,17 @@ export default function Chat() {
                 </div>
               ) : (
                 <span className="truncate flex-1 min-w-0 text-xs">{s.title}</span>
+              ))}
+              {!sessionsCollapsed && (
+                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 ml-1">
+                  <button onClick={(e) => startRename(e, s)} className="p-0.5 text-gray-400 hover:text-blue-500" title="Đổi tên">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button onClick={(e) => handleDeleteSession(e, s.id)} className="p-0.5 text-gray-400 hover:text-red-500" title="Xóa phiên">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               )}
-              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 ml-1">
-                <button onClick={(e) => startRename(e, s)} className="p-0.5 text-gray-400 hover:text-blue-500">
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button onClick={(e) => handleDeleteSession(e, s.id)} className="p-0.5 text-gray-400 hover:text-red-500">
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
             </div>
           ))}
         </div>
@@ -474,7 +498,7 @@ export default function Chat() {
           {activeSession && <span className="ml-auto text-xs text-slate-500">Session #{activeSession}</span>}
 
           {/* Hidden file input for upload */}
-          <input ref={fileInputRef} type="file" className="hidden" onChange={handleUploadForSession} />
+          <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.docx" onChange={handleUploadForSession} />
 
           {/* Upload mới */}
           <button
@@ -510,50 +534,75 @@ export default function Chat() {
 
         {/* Attached docs chips */}
         {attachedDocs.length > 0 && (
-          <div className="px-4 py-2 bg-emerald-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-emerald-700 font-semibold flex-shrink-0">📎 Đính kèm:</span>
-            {attachedDocs.map(a => (
-              <span key={a.doc_id} className="neo-chip text-emerald-700">
-                {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
-                <span className="text-[10px] text-emerald-400 border-l border-emerald-100 pl-1">
-                  {sessionDocStatusLabel(a)}
-                </span>
-                <button onClick={() => handleDetach(a.doc_id)} className="text-emerald-400 hover:text-red-500 ml-0.5">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
+          <div className="px-4 py-2 bg-emerald-50/50 border-b border-white/60">
+            <button
+              type="button"
+              onClick={() => toggleBar("attached")}
+              className="flex w-full items-center gap-2 text-xs text-emerald-700 font-semibold"
+              aria-expanded={!collapsedBars.attached}
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapsedBars.attached ? "-rotate-90" : ""}`} />
+              <span className="flex-shrink-0">Đính kèm ({attachedDocs.length})</span>
+            </button>
+            {!collapsedBars.attached && (
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                {attachedDocs.map(a => (
+                  <span key={a.doc_id} className="neo-chip text-emerald-700">
+                    {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
+                    <span className="text-[10px] text-emerald-400 border-l border-emerald-100 pl-1">
+                      {sessionDocStatusLabel(a)}
+                    </span>
+                    <button onClick={() => handleDetach(a.doc_id)} className="text-emerald-400 hover:text-red-500 ml-0.5" title="Gỡ đính kèm">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {/* Session uploaded documents */}
         {sessionDocs.length > 0 && (
-          <div className="px-4 py-2 bg-sky-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-blue-700 font-semibold flex-shrink-0">📄 File trong session:</span>
-            {sessionDocs.map((d: any) => (
-              <span key={d.id} className="neo-chip text-[#006666]">
-                {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
-                <span className="text-[10px] text-blue-400 border-l border-blue-100 pl-1">
-                  {sessionDocStatusLabel(d)}
-                </span>
-                <button 
-                  onClick={async () => {
-                    if (!activeSession) return;
-                    if (!confirm(`Xóa file "${d.filename}"?`)) return;
-                    try {
-                      await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
-                      // Refetch session documents to keep in sync
-                      await fetchSessionDocs(activeSession);
-                    } catch (err: any) {
-                      alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
-                    }
-                  }} 
-                  className="text-blue-400 hover:text-red-500 ml-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
+          <div className="px-4 py-2 bg-sky-50/50 border-b border-white/60">
+            <button
+              type="button"
+              onClick={() => toggleBar("sessionDocs")}
+              className="flex w-full items-center gap-2 text-xs text-blue-700 font-semibold"
+              aria-expanded={!collapsedBars.sessionDocs}
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapsedBars.sessionDocs ? "-rotate-90" : ""}`} />
+              <span className="flex-shrink-0">File trong session ({sessionDocs.length})</span>
+            </button>
+            {!collapsedBars.sessionDocs && (
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                {sessionDocs.map((d: any) => (
+                  <span key={d.id} className="neo-chip text-[#006666]">
+                    {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
+                    <span className="text-[10px] text-blue-400 border-l border-blue-100 pl-1">
+                      {sessionDocStatusLabel(d)}
+                    </span>
+                    <button 
+                      onClick={async () => {
+                        if (!activeSession) return;
+                        if (!confirm(`Xóa file "${d.filename}"?`)) return;
+                        try {
+                          await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
+                          // Refetch session documents to keep in sync
+                          await fetchSessionDocs(activeSession);
+                        } catch (err: any) {
+                          alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
+                        }
+                      }} 
+                      className="text-blue-400 hover:text-red-500 ml-0.5"
+                      title="Xóa file"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

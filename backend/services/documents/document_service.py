@@ -5,14 +5,16 @@ from fastapi import UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from config import UPLOAD_DIR_DEPARTMENT, UPLOAD_DIR_PERSONAL, UPLOAD_DIR_SQP
 from database import models
 from repositories.chat_repository import ChatRepository
 from repositories.department_repository import DepartmentRepository
 from repositories.document_repository import DocumentRepository
 from repositories.job_repository import BackgroundJobRepository
+from repositories.tag_repository import TagRepository
 from repositories.user_repository import UserRepository
 from services.jobs import job_service
+from services.admin.config_service import get_upload_dirs
+from services.documents import tag_service
 from services.policies.access_policy import can_access_document
 from utils.enum_utils import enum_value
 from utils.errors import bad_request, forbidden, not_found
@@ -36,6 +38,12 @@ def _safe_filename(filename: str) -> str:
 
 def _stored_filename(original_filename: str) -> str:
     return stored_filename(original_filename)
+
+
+def _ensure_supported_document_file(filename: str) -> None:
+    clean_name = safe_filename(filename)
+    if not clean_name.lower().endswith((".pdf", ".docx")):
+        raise bad_request("Chi ho tro tai lieu PDF hoac Word .docx")
 
 
 def _save_upload_file(file: UploadFile, target_dir: str, stored_name: str | None = None) -> tuple[str, str]:
@@ -103,6 +111,10 @@ def _index_status(db: Session, doc: models.Document) -> str:
 class DocumentPresenter:
     def __init__(self, indexer: DocumentIndexCoordinator):
         self.indexer = indexer
+        self.tags = TagRepository(indexer.db)
+
+    def _tags_for(self, doc: models.Document) -> list[dict]:
+        return [{"id": tag.id, "name": tag.name} for tag in self.tags.list_for_document(doc.id)]
 
     def personal_item(self, doc: models.Document) -> dict:
         return {
@@ -112,6 +124,7 @@ class DocumentPresenter:
             "is_indexed": doc.is_indexed,
             "index_status": self.indexer.index_status(doc),
             "uploaded_at": str(doc.uploaded_at),
+            "tags": self._tags_for(doc),
         }
 
     def department_item(self, doc: models.Document) -> dict:
@@ -123,6 +136,7 @@ class DocumentPresenter:
             "department_id": doc.department_id,
             "is_indexed": doc.is_indexed,
             "index_status": self.indexer.index_status(doc),
+            "tags": self._tags_for(doc),
         }
 
     def detail(self, doc: models.Document) -> dict:
@@ -137,6 +151,7 @@ class DocumentPresenter:
             "uploaded_at": str(doc.uploaded_at),
             "owner_id": doc.owner_id,
             "department_id": doc.department_id,
+            "tags": self._tags_for(doc),
         }
 
     def deleted_item(self, doc: models.Document) -> dict:
@@ -146,6 +161,7 @@ class DocumentPresenter:
             "scope": enum_value(doc.scope),
             "deleted_at": str(doc.deleted_at),
             "version_number": doc.version_number or 1,
+            "tags": self._tags_for(doc),
         }
 
     def session_item(self, doc: models.Document) -> dict:
@@ -155,6 +171,7 @@ class DocumentPresenter:
             "is_indexed": doc.is_indexed,
             "index_status": self.indexer.index_status(doc),
             "uploaded_at": str(doc.uploaded_at),
+            "tags": self._tags_for(doc),
         }
 
 
@@ -195,6 +212,7 @@ class DocumentQueryService:
                 "uploaded_at": str(doc.uploaded_at),
                 "owner_id": doc.owner_id,
                 "department_id": doc.department_id,
+                "tags": self.presenter._tags_for(doc),
             }
             for doc in docs
         ]
@@ -223,6 +241,7 @@ class DocumentQueryService:
             "file_path": doc.file_path,
             "summary": doc.summary,
             "uploaded_at": str(doc.uploaded_at),
+            "tags": self.presenter._tags_for(doc),
         }
 
     def list_document_versions(self, user_id: int, doc_id: int):
@@ -285,9 +304,14 @@ class DocumentUploadService:
         self.chat = ChatRepository(db)
         self.indexer = DocumentIndexCoordinator(db)
 
-    async def upload_personal_document(self, user_id: int, file: UploadFile):
+    @property
+    def upload_dirs(self) -> dict:
+        return get_upload_dirs(self.db)
+
+    async def upload_personal_document(self, user_id: int, file: UploadFile, tag_ids: list[int] | None = None):
+        _ensure_supported_document_file(file.filename)
         clean_name = safe_filename(file.filename)
-        target_dir = os.path.join(UPLOAD_DIR_PERSONAL, f"user_{user_id}")
+        target_dir = os.path.join(self.upload_dirs["personal"], f"user_{user_id}")
         clean_name, file_path = save_upload_file(file, target_dir, stored_filename(clean_name))
         doc = self.documents.add(models.Document(
             filename=clean_name,
@@ -295,15 +319,17 @@ class DocumentUploadService:
             owner_id=user_id,
             scope=models.ScopeEnum.personal,
         ))
+        tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
         return self.indexer.upload_response(doc, user_id)
 
     async def upload_session_personal_document(self, user_id: int, session_id: int, file: UploadFile):
+        _ensure_supported_document_file(file.filename)
         session = self.chat.get_session(session_id, user_id)
         if not session:
             raise not_found("Phien khong ton tai")
 
         clean_name = safe_filename(file.filename)
-        target_dir = os.path.join(UPLOAD_DIR_PERSONAL, f"user_{user_id}", "sessions", f"session_{session_id}")
+        target_dir = os.path.join(self.upload_dirs["personal"], f"user_{user_id}", "sessions", f"session_{session_id}")
         clean_name, file_path = save_upload_file(file, target_dir, stored_filename(clean_name))
         doc = self.documents.add(models.Document(
             filename=clean_name,
@@ -314,9 +340,10 @@ class DocumentUploadService:
         ))
         return self.indexer.upload_response(doc, user_id)
 
-    async def upload_department_document(self, manager_user_id: int, file: UploadFile):
+    async def upload_department_document(self, manager_user_id: int, file: UploadFile, tag_ids: list[int] | None = None):
+        _ensure_supported_document_file(file.filename)
         manager = self._require_user(manager_user_id)
-        clean_name, file_path = save_upload_file(file, UPLOAD_DIR_DEPARTMENT)
+        clean_name, file_path = save_upload_file(file, self.upload_dirs["department"])
         doc = self.documents.add(models.Document(
             filename=clean_name,
             file_path=file_path,
@@ -324,14 +351,22 @@ class DocumentUploadService:
             department_id=manager.department_id,
             scope=models.ScopeEnum.department,
         ))
+        tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
         return self.indexer.upload_response(doc, manager_user_id)
 
-    async def upload_department_document_for_admin(self, admin_user_id: int, department_id: int, file: UploadFile):
+    async def upload_department_document_for_admin(
+        self,
+        admin_user_id: int,
+        department_id: int,
+        file: UploadFile,
+        tag_ids: list[int] | None = None,
+    ):
+        _ensure_supported_document_file(file.filename)
         self._require_admin(admin_user_id)
         if not self.departments.get(department_id):
             raise not_found("Phong ban khong ton tai")
 
-        clean_name, file_path = save_upload_file(file, UPLOAD_DIR_DEPARTMENT)
+        clean_name, file_path = save_upload_file(file, self.upload_dirs["department"])
         doc = self.documents.add(models.Document(
             filename=clean_name,
             file_path=file_path,
@@ -339,9 +374,11 @@ class DocumentUploadService:
             department_id=department_id,
             scope=models.ScopeEnum.department,
         ))
+        tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
         return self.indexer.upload_response(doc, admin_user_id)
 
     async def upload_document_version(self, user_id: int, doc_id: int, file: UploadFile):
+        _ensure_supported_document_file(file.filename)
         user = self._require_user(user_id)
         doc = self.documents.get_active(doc_id)
         if not doc:
@@ -350,7 +387,7 @@ class DocumentUploadService:
             raise forbidden("Khong co quyen cap nhat tai lieu nay")
 
         clean_name = safe_filename(file.filename)
-        base_dir = os.path.dirname(doc.file_path) or UPLOAD_DIR_PERSONAL
+        base_dir = os.path.dirname(doc.file_path) or self.upload_dirs["personal"]
         if not self.documents.has_versions(doc_id):
             self.documents.add_version(models.DocumentVersion(
                 document_id=doc.id,
@@ -387,15 +424,17 @@ class DocumentUploadService:
             "job_id": job.id if job else None,
         }
 
-    async def upload_sqp_document_for_admin(self, admin_user_id: int, file: UploadFile):
+    async def upload_sqp_document_for_admin(self, admin_user_id: int, file: UploadFile, tag_ids: list[int] | None = None):
+        _ensure_supported_document_file(file.filename)
         self._require_admin(admin_user_id)
-        clean_name, file_path = save_upload_file(file, UPLOAD_DIR_SQP)
+        clean_name, file_path = save_upload_file(file, self.upload_dirs["sqp"])
         doc = self.documents.add(models.Document(
             filename=clean_name,
             file_path=file_path,
             owner_id=admin_user_id,
             scope=models.ScopeEnum.sqp,
         ))
+        tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
         return self.indexer.upload_response(doc, admin_user_id, force_admin_chunking=True)
 
     def _require_user(self, user_id: int) -> models.User:
@@ -457,6 +496,7 @@ class DocumentLifecycleService:
         doc_id: int,
         filename: Optional[str] = None,
         department_id: Optional[int] = None,
+        tag_ids: Optional[list[int]] = None,
     ):
         self._require_admin(admin_user_id)
         doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.department, include_deleted=True)
@@ -471,6 +511,9 @@ class DocumentLifecycleService:
                 raise not_found("Phong ban khong ton tai")
             doc.department_id = department_id
 
+        if tag_ids is not None:
+            tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
+
         self.documents.commit()
         self.documents.refresh(doc)
         return {
@@ -478,6 +521,7 @@ class DocumentLifecycleService:
             "id": doc.id,
             "filename": doc.filename,
             "department_id": doc.department_id,
+            "tags": [{"id": tag.id, "name": tag.name} for tag in TagRepository(self.db).list_for_document(doc.id)],
         }
 
     def update_sqp_document_for_admin(
@@ -485,6 +529,7 @@ class DocumentLifecycleService:
         admin_user_id: int,
         doc_id: int,
         filename: Optional[str] = None,
+        tag_ids: Optional[list[int]] = None,
     ):
         self._require_admin(admin_user_id)
         doc = self.documents.get_by_scope(doc_id, models.ScopeEnum.sqp, include_deleted=True)
@@ -494,9 +539,17 @@ class DocumentLifecycleService:
         if filename is not None and filename.strip():
             doc.filename, doc.file_path = replace_file_path(doc.file_path, filename)
 
+        if tag_ids is not None:
+            tag_service.apply_tags_to_document(self.db, doc.id, tag_ids)
+
         self.documents.commit()
         self.documents.refresh(doc)
-        return {"status": "success", "id": doc.id, "filename": doc.filename}
+        return {
+            "status": "success",
+            "id": doc.id,
+            "filename": doc.filename,
+            "tags": [{"id": tag.id, "name": tag.name} for tag in TagRepository(self.db).list_for_document(doc.id)],
+        }
 
     def delete_sqp_document_for_admin(self, admin_user_id: int, doc_id: int):
         self._require_admin(admin_user_id)
@@ -549,8 +602,8 @@ def list_personal_documents(db: Session, user_id: int, search: str = ""):
     return DocumentQueryService(db).list_personal_documents(user_id, search)
 
 
-async def upload_personal_document(db: Session, user_id: int, file: UploadFile):
-    return await DocumentUploadService(db).upload_personal_document(user_id, file)
+async def upload_personal_document(db: Session, user_id: int, file: UploadFile, tag_ids: list[int] | None = None):
+    return await DocumentUploadService(db).upload_personal_document(user_id, file, tag_ids)
 
 
 async def upload_session_personal_document(db: Session, user_id: int, session_id: int, file: UploadFile):
@@ -561,12 +614,20 @@ def list_department_documents(db: Session, user_id: int, search: str = ""):
     return DocumentQueryService(db).list_department_documents(user_id, search)
 
 
-async def upload_department_document(db: Session, manager_user_id: int, file: UploadFile):
-    return await DocumentUploadService(db).upload_department_document(manager_user_id, file)
+async def upload_department_document(db: Session, manager_user_id: int, file: UploadFile, tag_ids: list[int] | None = None):
+    return await DocumentUploadService(db).upload_department_document(manager_user_id, file, tag_ids)
 
 
-async def upload_department_document_for_admin(db: Session, admin_user_id: int, department_id: int, file: UploadFile):
-    return await DocumentUploadService(db).upload_department_document_for_admin(admin_user_id, department_id, file)
+async def upload_department_document_for_admin(
+    db: Session,
+    admin_user_id: int,
+    department_id: int,
+    file: UploadFile,
+    tag_ids: list[int] | None = None,
+):
+    return await DocumentUploadService(db).upload_department_document_for_admin(
+        admin_user_id, department_id, file, tag_ids
+    )
 
 
 def delete_personal_document(db: Session, user_id: int, doc_id: int):
@@ -583,9 +644,10 @@ def update_department_document_for_admin(
     doc_id: int,
     filename: Optional[str] = None,
     department_id: Optional[int] = None,
+    tag_ids: Optional[list[int]] = None,
 ):
     return DocumentLifecycleService(db).update_department_document_for_admin(
-        admin_user_id, doc_id, filename, department_id
+        admin_user_id, doc_id, filename, department_id, tag_ids
     )
 
 
@@ -621,8 +683,13 @@ def list_company_documents(db: Session, search: str = ""):
     return DocumentQueryService(db).list_company_documents(search)
 
 
-async def upload_sqp_document_for_admin(db: Session, admin_user_id: int, file: UploadFile):
-    return await DocumentUploadService(db).upload_sqp_document_for_admin(admin_user_id, file)
+async def upload_sqp_document_for_admin(
+    db: Session,
+    admin_user_id: int,
+    file: UploadFile,
+    tag_ids: list[int] | None = None,
+):
+    return await DocumentUploadService(db).upload_sqp_document_for_admin(admin_user_id, file, tag_ids)
 
 
 def update_sqp_document_for_admin(
@@ -630,8 +697,9 @@ def update_sqp_document_for_admin(
     admin_user_id: int,
     doc_id: int,
     filename: Optional[str] = None,
+    tag_ids: Optional[list[int]] = None,
 ):
-    return DocumentLifecycleService(db).update_sqp_document_for_admin(admin_user_id, doc_id, filename)
+    return DocumentLifecycleService(db).update_sqp_document_for_admin(admin_user_id, doc_id, filename, tag_ids)
 
 
 def delete_sqp_document_for_admin(db: Session, admin_user_id: int, doc_id: int):

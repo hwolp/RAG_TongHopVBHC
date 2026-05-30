@@ -56,6 +56,8 @@ class VectorSettings:
     embedding_model: str
     embedding_model_cache_dir: str
     embedding_model_allow_download: bool
+    rag_top_k: int
+    rag_chunk_size: int
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,8 @@ EMBEDDING_MODEL_BASE_URL = os.getenv("EMBEDDING_MODEL_BASE_URL", "sentence-trans
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 EMBEDDING_MODEL_CACHE_DIR = _backend_path(os.getenv("EMBEDDING_MODEL_CACHE_DIR", "./models/huggingface"))
 EMBEDDING_MODEL_ALLOW_DOWNLOAD = _env_bool("EMBEDDING_MODEL_ALLOW_DOWNLOAD", True)
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "8"))
+RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "1800"))
 
 # === Upload Directories ===
 UPLOAD_DIR_PERSONAL = os.getenv("UPLOAD_DIR_PERSONAL", "uploads/personal")
@@ -118,6 +122,8 @@ APP_SETTINGS = AppSettings(
         embedding_model=EMBEDDING_MODEL,
         embedding_model_cache_dir=EMBEDDING_MODEL_CACHE_DIR,
         embedding_model_allow_download=EMBEDDING_MODEL_ALLOW_DOWNLOAD,
+        rag_top_k=RAG_TOP_K,
+        rag_chunk_size=RAG_CHUNK_SIZE,
     ),
     uploads=UploadSettings(
         personal_dir=UPLOAD_DIR_PERSONAL,

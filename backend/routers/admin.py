@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,9 +13,21 @@ from services.sharing import share_service, sqp_service
 router = APIRouter(prefix="/admin", tags=["Quản trị hệ thống"])
 
 
+def parse_tag_ids(tag_ids: str | None) -> list[int]:
+    if not tag_ids:
+        return []
+    result: list[int] = []
+    for raw in tag_ids.split(","):
+        value = raw.strip()
+        if value:
+            result.append(int(value))
+    return result
+
+
 class UpdateDepartmentDocumentRequest(BaseModel):
     filename: str | None = None
     department_id: int | None = None
+    tag_ids: list[int] | None = None
 
 
 class ShareByUsernameRequest(BaseModel):
@@ -96,6 +108,11 @@ def create_config(payload: ConfigRequest, db: Session = Depends(get_db), _: dict
     return config_service.create_config(db, payload.key or "", payload.value or "", payload.type or "metadata")
 
 
+@router.post("/configs/system/reset")
+def reset_system_configs(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
+    return config_service.reset_system_configs(db)
+
+
 @router.put("/configs/{config_id}")
 def update_config(config_id: int, payload: ConfigRequest, db: Session = Depends(get_db), _: dict = Depends(require_admin)):
     return config_service.update_config(db, config_id, payload.key, payload.value, payload.type)
@@ -139,10 +156,13 @@ def list_all_department_documents(
 async def upload_department_document(
     department_id: int,
     file: UploadFile = File(...),
+    tag_ids: str = Form(""),
     db: Session = Depends(get_db),
     admin_user: dict = Depends(require_admin),
 ):
-    return await document_service.upload_department_document_for_admin(db, admin_user["id"], department_id, file)
+    return await document_service.upload_department_document_for_admin(
+        db, admin_user["id"], department_id, file, parse_tag_ids(tag_ids)
+    )
 
 
 @router.put("/documents/department/{doc_id}")
@@ -158,6 +178,7 @@ def update_department_document(
         doc_id=doc_id,
         filename=payload.filename,
         department_id=payload.department_id,
+        tag_ids=payload.tag_ids,
     )
 
 

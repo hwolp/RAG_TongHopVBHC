@@ -1,4 +1,4 @@
 __pycache__/
+.pytest_cache/
 *.pyc
-uploads/
-backend/database/chromadb_storage/
+test.tmp
