@@ -15,7 +15,7 @@ class OllamaAI(LLMProviderInterface):
         self.prompt_builder = prompt_builder or PromptBuilder()
 
     def generate_answer(self, question: str, context: str, chat_history: str = ""):
-        """Generate an answer from retrieved context and the standalone question."""
+        """Generate an answer from retrieved context and the original user question."""
         formatted = self.prompt_builder.build_answer_prompt(question, context, chat_history)
         return self._clean_answer(str(self.llm.invoke(formatted) or ""))
 
@@ -27,7 +27,26 @@ class OllamaAI(LLMProviderInterface):
         rewritten = str(self.llm.invoke(formatted) or "").strip()
         if not rewritten:
             return question
-        return rewritten.splitlines()[0].strip(" \"'") or question
+        candidate = rewritten.splitlines()[0].strip(" \"'-•:") or question
+        return candidate if self._is_valid_rewrite(question, candidate) else question
+
+    @staticmethod
+    def _is_valid_rewrite(question: str, rewritten: str) -> bool:
+        clean = (rewritten or "").strip()
+        if not clean:
+            return False
+        if len(clean) > max(240, len(question or "") * 3 + 80):
+            return False
+        normalized = clean.lower()
+        answer_markers = [
+            "câu trả lời",
+            "trả lời:",
+            "dựa trên ngữ cảnh",
+            "theo ngữ cảnh",
+            "tôi không tìm thấy",
+            "không tìm thấy thông tin",
+        ]
+        return not any(marker in normalized for marker in answer_markers)
 
     @staticmethod
     def _clean_answer(answer: str) -> str:

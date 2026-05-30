@@ -49,13 +49,25 @@ _STRUCTURE_QUERY_PATTERNS = [
     r"\bt[aấ]t\s+c[aả]\s+c[aá]c\s+ch[uư][ơo]ng\b",
     r"\bli[eệ]t\s+k[eê].*\bch[uư][ơo]ng\b",
     r"\bdanh\s+s[aá]ch.*\bch[uư][ơo]ng\b",
+    r"\bli[eệ]t\s+k[eê].*\b[đd]i[eềệ]u\b",
+    r"\bdanh\s+s[aá]ch.*\b[đd]i[eềệ]u\b",
+    r"\bbao\s+nhi[eê]u\s+[đd]i[eềệ]u\b",
+    r"\bc[oó]\s+m[aấ]y\s+[đd]i[eềệ]u\b",
+    r"\bg[oồ]m\s+m[aấ]y\s+[đd]i[eềệ]u\b",
+    r"\bg[oồ]m\s+bao\s+nhi[eê]u\s+[đd]i[eềệ]u\b",
+    r"\bbao\s+nhi[eê]u\s+ch[uư][ơo]ng\b",
+    r"\bc[oó]\s+m[aấ]y\s+ch[uư][ơo]ng\b",
+    r"\bg[oồ]m\s+m[aấ]y\s+ch[uư][ơo]ng\b",
+    r"\bg[oồ]m\s+bao\s+nhi[eê]u\s+ch[uư][ơo]ng\b",
     r"\bm[uụ]c\s+l[uụ]c\b",
     r"\bc[aấ]u\s+tr[uú]c\b",
 ]
 _DEFAULT_RETRIEVAL_K = 4
+_VECTOR_CANDIDATE_K = 12
 _ATTACHED_DOC_RETRIEVAL_K = 3
 _SUMMARY_DOC_CONTEXT_LIMIT = 16
 _PARENT_CONTEXT_LIMIT = 2
+_PARENT_EXPANSION_SEED_LIMIT = 6
 _STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
 _STRUCTURE_CONTEXT_PREFIX = "Văn bản gồm các phần sau:"
 _ARTICLE_DIRECT_RETRIEVAL_MAX = 2   # tối đa retrieve trực tiếp 2 Điều / query
@@ -63,10 +75,40 @@ _ARTICLE_DIRECT_CHUNK_LIMIT = 10    # một Điều hiếm khi có > 30 chunks
 _MAX_CONTEXT_CHUNKS = 12
 _MAX_CONTEXT_CHARS = 10000
 _KEYWORD_SCAN_LIMIT = 5000
+_LEXICAL_CANDIDATE_LIMIT = 24
 _ARTICLE_QUERY_PATTERN = re.compile(
     r"\bđi[eềệ]u\s+(\d+)\b",
     re.IGNORECASE,
 )
+_LEXICAL_STOP_WORDS = {
+    "ai",
+    "bi",
+    "bo",
+    "cac",
+    "cai",
+    "can",
+    "cho",
+    "co",
+    "cua",
+    "duoc",
+    "gi",
+    "gom",
+    "hay",
+    "la",
+    "lam",
+    "mot",
+    "nao",
+    "nay",
+    "nhung",
+    "noi",
+    "quy",
+    "theo",
+    "thi",
+    "trong",
+    "tu",
+    "van",
+    "ve",
+}
 _KEYWORD_ROUTES = [
     (
         "doi_tuong_ap_dung",
@@ -133,6 +175,12 @@ def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", without_marks.replace("đ", "d").replace("Đ", "D").lower()).strip()
 
 
+def _tokenize_text(value: str) -> set[str]:
+    normalized = _normalize_text(value)
+    tokens = set(re.findall(r"[a-z0-9]+", normalized))
+    return {token for token in tokens if len(token) >= 2 and token not in _LEXICAL_STOP_WORDS}
+
+
 def is_structure_context(context: str) -> bool:
     return context.startswith(_STRUCTURE_CONTEXT_PREFIX) or context.startswith("Cấu trúc tài liệu được index:")
 
@@ -190,7 +238,7 @@ class ChromaDBManager(VectorStoreInterface):
         self.vectordb = Chroma(persist_directory=self.persist_directory, embedding_function=self.embeddings)
         self.document_processor = document_processor or DocumentProcessor()
 
-    def _load_embeddings(self) -> HuggingFaceEmbeddings:
+    def _load_embeddings(self) -> HuggingFaceEmbeddings | None:
         cache_key = (EMBEDDING_MODEL, EMBEDDING_MODEL_CACHE_DIR, EMBEDDING_DEVICE)
         cached_embeddings = self._embeddings_cache.get(cache_key)
         if cached_embeddings is not None:
@@ -201,7 +249,14 @@ class ChromaDBManager(VectorStoreInterface):
             if cached_embeddings is not None:
                 return cached_embeddings
 
-            embeddings = self._create_embeddings()
+            try:
+                embeddings = self._create_embeddings()
+            except OSError:
+                logging.warning(
+                    "Embedding model '%s' could not be loaded in the current memory budget; falling back to metadata-driven retrieval only.",
+                    EMBEDDING_MODEL,
+                )
+                return None
             self._embeddings_cache[cache_key] = embeddings
             return embeddings
 
@@ -270,6 +325,8 @@ class ChromaDBManager(VectorStoreInterface):
     def add_documents(self, documents: list[LCDocument]) -> int:
         if not documents:
             return 0
+        if self.embeddings is None:
+            raise RuntimeError("Embedding model is required to index documents but could not be loaded")
         self.vectordb.add_documents(documents=documents)
         return len(documents)
 
@@ -343,7 +400,9 @@ class ChromaDBManager(VectorStoreInterface):
                     rewritten_query=query,
                     session_id=session_id,
                     extra_doc_ids=extra_doc_ids,
+                    article_docs=[],
                     keyword_docs=[],
+                    lexical_docs=[],
                     vector_docs=[],
                     final_docs=[],
                 )
@@ -353,20 +412,30 @@ class ChromaDBManager(VectorStoreInterface):
                 docs = self._trim_context_docs(summary_docs)
                 return self._format_context_response(docs)
 
+        keyword_targets = self._keyword_targets(detection_queries)
         keyword_docs = self._keyword_routed_search(detection_queries, scope_filter)
         article_docs = self._article_direct_search(structure_query, scope_filter)
-        priority_docs = self._merge_document_lists(keyword_docs, article_docs)
-        priority_with_parents = self._merge_document_lists(priority_docs, self._expand_parent_context(priority_docs))
+        lexical_docs = self._lexical_candidate_search(detection_queries, scope_filter, keyword_targets)
         attached_docs = self._attached_docs(query, extra_doc_ids)
-        vector_docs = self._similarity_search(query, k, scope_filter)
-        docs = self._merge_document_lists(priority_with_parents, attached_docs, vector_docs)
-        docs = self._trim_context_docs(docs)
+        vector_docs = self._similarity_search(query, max(k, _VECTOR_CANDIDATE_K), scope_filter)
+        docs = self._rank_and_pack_context(
+            queries=detection_queries,
+            keyword_targets=keyword_targets,
+            extra_doc_ids=extra_doc_ids,
+            article_docs=article_docs,
+            keyword_docs=keyword_docs,
+            lexical_docs=lexical_docs,
+            attached_docs=attached_docs,
+            vector_docs=vector_docs,
+        )
         self._log_retrieval(
             question=original_query or query,
             rewritten_query=query,
             session_id=session_id,
             extra_doc_ids=extra_doc_ids,
+            article_docs=article_docs,
             keyword_docs=keyword_docs,
+            lexical_docs=lexical_docs,
             vector_docs=vector_docs,
             final_docs=docs,
         )
@@ -423,6 +492,8 @@ class ChromaDBManager(VectorStoreInterface):
         return _build_chroma_filter(scope_conditions)
 
     def _similarity_search(self, query: str, k: int, scope_filter: Optional[dict]) -> list[LCDocument]:
+        if self.embeddings is None:
+            return []
         if scope_filter:
             return self.vectordb.similarity_search(query, k=k, filter=scope_filter)
         return self.vectordb.similarity_search(query, k=k)
@@ -636,6 +707,221 @@ class ChromaDBManager(VectorStoreInterface):
         normalized_value = _normalize_text(value)
         return any(_normalize_text(keyword) in normalized_value for keyword in keywords)
 
+    def _lexical_candidate_search(
+        self,
+        queries: list[str],
+        scope_filter: Optional[dict],
+        keyword_targets: list[str],
+    ) -> list[LCDocument]:
+        query_tokens = self._query_tokens(queries, keyword_targets)
+        if not query_tokens and not keyword_targets:
+            return []
+
+        candidates = self._scoped_documents(scope_filter, _KEYWORD_SCAN_LIMIT)
+        scored: list[tuple[float, LCDocument]] = []
+        for doc in candidates:
+            score = self._lexical_score(doc, query_tokens, keyword_targets)
+            if score <= 0:
+                continue
+            scored.append((score, doc))
+
+        scored.sort(
+            key=lambda item: (
+                -item[0],
+                int(item[1].metadata.get("doc_id") or 0),
+                int(item[1].metadata.get("chunk_index") or 0),
+            )
+        )
+        return [doc for _, doc in scored[:_LEXICAL_CANDIDATE_LIMIT]]
+
+    def _scoped_documents(self, scope_filter: Optional[dict], limit: int) -> list[LCDocument]:
+        try:
+            collection = self.vectordb._collection
+            kwargs = {
+                "include": ["documents", "metadatas"],
+                "limit": limit,
+            }
+            if scope_filter:
+                kwargs["where"] = scope_filter
+            results = collection.get(**kwargs)
+        except Exception:
+            return []
+
+        documents = results.get("documents", []) or []
+        metadatas = results.get("metadatas", []) or []
+        return [
+            LCDocument(page_content=content, metadata=metadatas[index] or {})
+            for index, content in enumerate(documents)
+            if content
+        ]
+
+    def _rank_and_pack_context(
+        self,
+        queries: list[str],
+        keyword_targets: list[str],
+        extra_doc_ids: Optional[list[int]],
+        article_docs: list[LCDocument],
+        keyword_docs: list[LCDocument],
+        lexical_docs: list[LCDocument],
+        attached_docs: list[LCDocument],
+        vector_docs: list[LCDocument],
+    ) -> list[LCDocument]:
+        query_tokens = self._query_tokens(queries, keyword_targets)
+        attached_ids = {str(doc_id) for doc_id in extra_doc_ids or []}
+        article_numbers = self._extract_article_numbers(" ".join(queries))
+        scored: dict[tuple[str, str, str, str], tuple[float, LCDocument]] = {}
+
+        def add_group(group: str, docs: list[LCDocument]) -> None:
+            for rank, doc in enumerate(docs):
+                score = self._retrieval_score(
+                    doc=doc,
+                    group=group,
+                    rank=rank,
+                    query_tokens=query_tokens,
+                    keyword_targets=keyword_targets,
+                    article_numbers=article_numbers,
+                    attached_ids=attached_ids,
+                )
+                self._add_scored_doc(scored, doc, group, score)
+
+        add_group("article", article_docs)
+        add_group("keyword", keyword_docs)
+        add_group("lexical", lexical_docs)
+        add_group("attached", attached_docs)
+        add_group("vector", vector_docs)
+
+        ranked = self._sort_scored_docs(scored)
+        parent_seeds = ranked[:_PARENT_EXPANSION_SEED_LIMIT]
+        parent_docs = self._expand_parent_context(parent_seeds)
+        for doc in parent_docs:
+            if any(self._doc_key(doc) == self._doc_key(seed) for seed in parent_seeds):
+                continue
+            seed_score = self._best_parent_seed_score(doc, parent_seeds)
+            self._add_scored_doc(scored, doc, "parent", max(20.0, seed_score - 8.0))
+
+        ranked = self._sort_scored_docs(scored)
+        return self._trim_context_docs(ranked)
+
+    @staticmethod
+    def _query_tokens(queries: list[str], keyword_targets: list[str]) -> set[str]:
+        combined = " ".join(list(queries) + list(keyword_targets))
+        return _tokenize_text(combined)
+
+    def _lexical_score(self, doc: LCDocument, query_tokens: set[str], keyword_targets: list[str]) -> float:
+        metadata = doc.metadata or {}
+        title_text = self._metadata_title_text(metadata)
+        content_text = doc.page_content or ""
+        haystack = f"{title_text} {content_text}"
+        haystack_tokens = _tokenize_text(haystack)
+        score = 0.0
+        if query_tokens:
+            overlap = len(query_tokens & haystack_tokens) / max(len(query_tokens), 1)
+            score += overlap * 30.0
+        normalized_title = _normalize_text(title_text)
+        normalized_text = _normalize_text(haystack)
+        for target in keyword_targets:
+            normalized_target = _normalize_text(target)
+            if normalized_target and normalized_target in normalized_title:
+                score += 25.0
+            elif normalized_target and normalized_target in normalized_text:
+                score += 12.0
+        return score
+
+    def _retrieval_score(
+        self,
+        doc: LCDocument,
+        group: str,
+        rank: int,
+        query_tokens: set[str],
+        keyword_targets: list[str],
+        article_numbers: list[str],
+        attached_ids: set[str],
+    ) -> float:
+        group_base = {
+            "article": 100.0,
+            "keyword": 82.0,
+            "lexical": 55.0,
+            "attached": 45.0,
+            "vector": 36.0,
+            "parent": 25.0,
+        }.get(group, 20.0)
+        metadata = doc.metadata or {}
+        score = group_base + self._lexical_score(doc, query_tokens, keyword_targets)
+        if str(metadata.get("doc_id") or "") in attached_ids:
+            score += 8.0
+        article_number = str(metadata.get("article_number") or "").strip()
+        if article_number and article_number in article_numbers:
+            score += 20.0
+        if group == "vector":
+            score += max(0.0, _VECTOR_CANDIDATE_K - rank)
+        else:
+            score += max(0.0, 6.0 - min(rank, 6))
+        return score
+
+    @staticmethod
+    def _metadata_title_text(metadata: dict) -> str:
+        return " ".join(
+            str(metadata.get(key) or "")
+            for key in ("article_title", "chapter_title", "list_section_title", "list_item_title", "title")
+        )
+
+    @staticmethod
+    def _doc_key(doc: LCDocument) -> tuple[str, str, str, str]:
+        metadata = doc.metadata or {}
+        return (
+            str(metadata.get("doc_id") or ""),
+            str(metadata.get("chunk_index") or ""),
+            str(metadata.get("parent_id") or ""),
+            (doc.page_content or "")[:120],
+        )
+
+    def _add_scored_doc(
+        self,
+        scored: dict[tuple[str, str, str, str], tuple[float, LCDocument]],
+        doc: LCDocument,
+        group: str,
+        score: float,
+    ) -> None:
+        key = self._doc_key(doc)
+        existing = scored.get(key)
+        if existing and existing[0] >= score:
+            return
+        metadata = dict(doc.metadata or {})
+        metadata["_retrieval_group"] = group
+        metadata["_retrieval_score"] = round(score, 3)
+        scored[key] = (score, LCDocument(page_content=doc.page_content, metadata=metadata))
+
+    @staticmethod
+    def _sort_scored_docs(scored: dict[tuple[str, str, str, str], tuple[float, LCDocument]]) -> list[LCDocument]:
+        return [
+            doc
+            for _, doc in sorted(
+                scored.values(),
+                key=lambda item: (
+                    -item[0],
+                    int(item[1].metadata.get("doc_id") or 0),
+                    str(item[1].metadata.get("article_number") or ""),
+                    int(item[1].metadata.get("parent_index") or 0),
+                    int(item[1].metadata.get("child_index") or 0),
+                    int(item[1].metadata.get("chunk_index") or 0),
+                ),
+            )
+        ]
+
+    def _best_parent_seed_score(self, doc: LCDocument, seeds: list[LCDocument]) -> float:
+        metadata = doc.metadata or {}
+        doc_id = str(metadata.get("doc_id") or "")
+        parent_id = str(metadata.get("parent_id") or "")
+        best = 25.0
+        for seed in seeds:
+            seed_meta = seed.metadata or {}
+            if str(seed_meta.get("doc_id") or "") != doc_id:
+                continue
+            if str(seed_meta.get("parent_id") or "") != parent_id:
+                continue
+            best = max(best, float(seed_meta.get("_retrieval_score") or 25.0))
+        return best
+
     def _merge_attached_docs(
         self,
         query: str,
@@ -651,6 +937,8 @@ class ChromaDBManager(VectorStoreInterface):
             try:
                 if summary_query:
                     attached_docs.extend(self.get_doc_context_chunks(doc_id, limit=_SUMMARY_DOC_CONTEXT_LIMIT))
+                elif self.embeddings is None:
+                    attached_docs.extend(self.get_doc_context_chunks(doc_id, limit=_ATTACHED_DOC_RETRIEVAL_K))
                 else:
                     attached_docs.extend(
                         self.vectordb.similarity_search(
@@ -865,27 +1153,37 @@ class ChromaDBManager(VectorStoreInterface):
         rewritten_query: str,
         session_id: Optional[int],
         extra_doc_ids: Optional[list[int]],
+        article_docs: list[LCDocument],
         keyword_docs: list[LCDocument],
+        lexical_docs: list[LCDocument],
         vector_docs: list[LCDocument],
         final_docs: list[LCDocument],
     ) -> None:
         article_refs = []
+        groups: dict[str, int] = {}
         for doc in final_docs:
             metadata = doc.metadata or {}
+            group = str(metadata.get("_retrieval_group") or "unknown")
+            groups[group] = groups.get(group, 0) + 1
             article = metadata.get("article_number")
             title = metadata.get("article_title")
             if article or title:
-                article_refs.append(f"{article or '?'}:{title or ''}")
+                score = metadata.get("_retrieval_score")
+                article_refs.append(f"{article or '?'}:{title or ''}:{score or ''}")
         logging.info(
             "RAG retrieval question=%r rewritten=%r session_id=%s extra_doc_ids=%s "
-            "keyword_hits=%s vector_hits=%s final_chunks=%s articles=%s",
+            "article_hits=%s keyword_hits=%s lexical_hits=%s vector_hits=%s "
+            "final_chunks=%s groups=%s articles=%s",
             question[:120],
             rewritten_query[:120],
             session_id,
             extra_doc_ids or [],
+            len(article_docs),
             len(keyword_docs),
+            len(lexical_docs),
             len(vector_docs),
             len(final_docs),
+            groups,
             article_refs[:8],
         )
 
@@ -972,6 +1270,12 @@ class ChromaDBManager(VectorStoreInterface):
         for doc_id in sorted(structures, key=_natural_sort_key):
             structure = structures[doc_id]
             sources.append(doc_id)
+            article_count = len(structure["articles"])
+            chapter_count = len(structure["chapters"])
+            if article_count:
+                lines.append(f"- Tổng số điều: {article_count}")
+            if chapter_count:
+                lines.append(f"- Tổng số chương: {chapter_count}")
             last_article_number = 0
             if structure["chapters"]:
                 for chapter_number in sorted(structure["chapters"], key=_natural_sort_key):

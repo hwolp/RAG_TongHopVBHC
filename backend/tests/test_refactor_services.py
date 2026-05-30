@@ -10,10 +10,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from database import models
 from rag_engine.chroma_manager import ChromaDBManager, _is_structure_query, is_structure_context
 from rag_engine.models import DocumentIndexMetadata
+from rag_engine.ollama_ai import OllamaAI
 from services.chat import context_service
 from services.chat.context_service import build_recent_chat_history
 from services.jobs.handlers import JobDispatcher
 from services.rag.document_processor import DocumentProcessor, _postprocess_ocr_text
+from services.rag.prompt_builder import PromptBuilder
 
 
 def test_document_processor_tags_normal_chunks_with_index_metadata():
@@ -83,6 +85,7 @@ def test_structure_context_answers_without_document_id_heading(monkeypatch):
 def test_structure_query_detects_article_count_questions():
     assert _is_structure_query("Văn bản gồm bao nhiêu điều")
     assert _is_structure_query("Văn bản này có mấy điều?")
+    assert _is_structure_query("Liệt kê các điều trong văn bản")
 
 
 def test_document_processor_merges_ocr_pages_with_worker_results(monkeypatch):
@@ -269,3 +272,54 @@ def test_recent_chat_history_keeps_latest_valid_turns(monkeypatch):
     assert "AI: Đáp án cũ" in history
     assert "Nguoi dung: Câu hỏi mới nhất" in history
     assert history.rstrip().endswith("AI: Đáp án mới nhất")
+
+
+def test_rewrite_query_falls_back_when_llm_returns_answer_like_text():
+    class FakeLLM:
+        def invoke(self, prompt):
+            return "Câu trả lời: Văn bản này có 7 điều."
+
+    ai = OllamaAI.__new__(OllamaAI)
+    ai.llm = FakeLLM()
+    ai.prompt_builder = PromptBuilder()
+
+    question = "Văn bản gồm bao nhiêu điều?"
+    history = "Nguoi dung: Nội dung chính là gì?\nAI: Văn bản quy định về lương cơ sở.\n"
+
+    assert ai.rewrite_query(question, history) == question
+
+
+def test_rerank_prioritizes_title_match_over_vector_only_chunk():
+    manager = ChromaDBManager.__new__(ChromaDBManager)
+    title_doc = LCDocument(
+        page_content="[Điều 2] Nội dung về các nhóm đối tượng được áp dụng.",
+        metadata={
+            "doc_id": 1,
+            "chunk_index": 5,
+            "article_number": "2",
+            "article_title": "Đối tượng áp dụng",
+        },
+    )
+    vector_doc = LCDocument(
+        page_content="Một đoạn khác có vài từ áp dụng nhưng không phải tiêu đề chính.",
+        metadata={
+            "doc_id": 1,
+            "chunk_index": 9,
+            "article_number": "4",
+            "article_title": "Kinh phí thực hiện",
+        },
+    )
+
+    ranked = manager._rank_and_pack_context(
+        queries=["Đối tượng áp dụng là ai?"],
+        keyword_targets=["đối tượng áp dụng"],
+        extra_doc_ids=None,
+        article_docs=[],
+        keyword_docs=[title_doc],
+        lexical_docs=[],
+        attached_docs=[],
+        vector_docs=[vector_doc],
+    )
+
+    assert ranked[0].metadata["article_title"] == "Đối tượng áp dụng"
+    assert ranked[0].metadata["_retrieval_group"] == "keyword"

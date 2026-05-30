@@ -1,4 +1,5 @@
 import json
+import logging
 from abc import ABC, abstractmethod
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from repositories.user_repository import UserRepository
 from services.chat.chat_service import ensure_chat_scope_allowed, normalize_chat_scope
 from services.chat.context_service import build_recent_chat_history, split_accessible_attachments_by_index_status
 from services.jobs import job_service
+
+NO_CONTEXT_ANSWER = "Tôi không tìm thấy thông tin này trong văn bản đã nạp."
 
 
 class JobHandler(ABC):
@@ -108,6 +111,13 @@ class ChatAnswerJobHandler(JobHandler):
         job_service.update_progress(self.db, job, 25)
         ai = OllamaAI()
         rewritten_query = self._rewrite_question(ai, question, chat_history)
+        logging.info(
+            "RAG rewrite session_id=%s original=%r rewritten=%r history_turn_lines=%s",
+            session.id,
+            question[:120],
+            rewritten_query[:120],
+            len([line for line in chat_history.splitlines() if line.startswith(("Nguoi dung:", "AI:"))]),
+        )
         manager = ChromaDBManager()
         context, sources = manager.search_context_with_filter(
             query=rewritten_query,
@@ -122,11 +132,17 @@ class ChatAnswerJobHandler(JobHandler):
         job_service.update_progress(self.db, job, 60)
         from rag_engine.chroma_manager import is_structure_context
 
-        answer = context if is_structure_context(context) else ai.generate_answer(
-            rewritten_query,
-            context,
-            "",
-        )
+        if is_structure_context(context):
+            answer = context
+        elif not (context or "").strip():
+            answer = NO_CONTEXT_ANSWER
+        else:
+            clarified = rewritten_query if rewritten_query.strip() != question.strip() else ""
+            answer = ai.generate_answer(
+                question,
+                context,
+                clarified,
+            )
 
         job_service.update_progress(self.db, job, 90)
         ai_message.content = answer

@@ -7,7 +7,7 @@ from langchain_core.documents import Document as LCDocument
 class LLMProviderInterface(ABC):
     @abstractmethod
     def generate_answer(self, question: str, context: str, chat_history: str = "") -> str:
-        """Generate an answer from a question, retrieved context, and chat history."""
+        """Generate an answer from the original question, retrieved context, and optional clarified query."""
 
 
 class RetrieverInterface(ABC):

@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from services.chat.context_service import accessible_attachment_ids, build_recen
 from services.chat.models import ChatAnswerResult, GeneratedAnswer, RetrievedContext
 from services.jobs import job_service
 from utils.errors import forbidden, not_found
+
+NO_CONTEXT_ANSWER = "Tôi không tìm thấy thông tin này trong văn bản đã nạp."
 
 
 def normalize_chat_scope(scope: str) -> str:
@@ -155,6 +158,13 @@ class ChatAnswerService:
         chat_history = build_recent_chat_history(self.db, session.id)
         ai = self._build_ai()
         rewritten_query = self._rewrite_question(ai, question, chat_history)
+        logging.info(
+            "RAG rewrite session_id=%s original=%r rewritten=%r history_turn_lines=%s",
+            session.id,
+            question[:120],
+            rewritten_query[:120],
+            len([line for line in chat_history.splitlines() if line.startswith(("Nguoi dung:", "AI:"))]),
+        )
         retrieved = self._retrieve_context(
             user_id,
             user,
@@ -164,7 +174,7 @@ class ChatAnswerService:
             attached_doc_ids,
             original_query=question,
         )
-        generated = self._generate_answer(rewritten_query, retrieved, chat_history, ai)
+        generated = self._generate_answer(question, retrieved, rewritten_query, ai)
 
         user_message = models.ChatMessage(session_id=session.id, sender="user", content=question)
         ai_message = models.ChatMessage(
@@ -253,14 +263,23 @@ class ChatAnswerService:
         )
         return RetrievedContext(context=context, sources=sources)
 
-    def _generate_answer(self, question: str, retrieved: RetrievedContext, chat_history: str, ai=None) -> GeneratedAnswer:
+    def _generate_answer(
+        self,
+        question: str,
+        retrieved: RetrievedContext,
+        rewritten_query: str = "",
+        ai=None,
+    ) -> GeneratedAnswer:
         from rag_engine.chroma_manager import is_structure_context
 
         if is_structure_context(retrieved.context):
             return GeneratedAnswer(answer=retrieved.context, sources=retrieved.sources)
+        if not (retrieved.context or "").strip():
+            return GeneratedAnswer(answer=NO_CONTEXT_ANSWER, sources=retrieved.sources)
 
         ai = ai or self._build_ai()
-        answer = ai.generate_answer(question, retrieved.context, "")
+        clarified = rewritten_query if rewritten_query and rewritten_query.strip() != question.strip() else ""
+        answer = ai.generate_answer(question, retrieved.context, clarified)
         return GeneratedAnswer(answer=answer, sources=retrieved.sources)
 
     @staticmethod
