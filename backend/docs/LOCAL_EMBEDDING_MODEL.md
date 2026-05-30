@@ -19,6 +19,7 @@ Trong `backend/.env`:
 
 ```dotenv
 EMBEDDING_MODEL=dangvantuan/vietnamese-document-embedding
+EMBEDDING_DEVICE=auto
 EMBEDDING_MODEL_CACHE_DIR=./models/huggingface
 EMBEDDING_MODEL_ALLOW_DOWNLOAD=true
 ```

@@ -1,4 +1,5 @@
 import re
+from threading import Lock
 from typing import Optional
 
 try:
@@ -15,6 +16,7 @@ from langchain_core.documents import Document as LCDocument
 
 from config import (
     CHROMA_PERSIST_DIR,
+    EMBEDDING_DEVICE,
     EMBEDDING_MODEL,
     EMBEDDING_MODEL_ALLOW_DOWNLOAD,
     EMBEDDING_MODEL_CACHE_DIR,
@@ -42,14 +44,14 @@ _STRUCTURE_QUERY_PATTERNS = [
     r"\bm[uụ]c\s+l[uụ]c\b",
     r"\bc[aấ]u\s+tr[uú]c\b",
 ]
-_DEFAULT_RETRIEVAL_K = 8
-_ATTACHED_DOC_RETRIEVAL_K = 6
+_DEFAULT_RETRIEVAL_K = 4
+_ATTACHED_DOC_RETRIEVAL_K = 3
 _SUMMARY_DOC_CONTEXT_LIMIT = 16
-_PARENT_CONTEXT_LIMIT = 8
+_PARENT_CONTEXT_LIMIT = 2
 _STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
 _STRUCTURE_CONTEXT_PREFIX = "Văn bản gồm các phần sau:"
 _ARTICLE_DIRECT_RETRIEVAL_MAX = 2   # tối đa retrieve trực tiếp 2 Điều / query
-_ARTICLE_DIRECT_CHUNK_LIMIT = 30    # một Điều hiếm khi có > 30 chunks
+_ARTICLE_DIRECT_CHUNK_LIMIT = 10    # một Điều hiếm khi có > 30 chunks
 _ARTICLE_QUERY_PATTERN = re.compile(
     r"\bđi[eềệ]u\s+(\d+)\b",
     re.IGNORECASE,
@@ -122,6 +124,9 @@ def _clean_structure_title(value: str) -> str:
 
 
 class ChromaDBManager(VectorStoreInterface):
+    _embeddings_cache: dict[tuple[str, str, str], HuggingFaceEmbeddings] = {}
+    _embeddings_lock = Lock()
+
     def __init__(self, document_processor: DocumentProcessor | None = None):
         self.persist_directory = CHROMA_PERSIST_DIR
         self.embeddings = self._load_embeddings()
@@ -129,11 +134,29 @@ class ChromaDBManager(VectorStoreInterface):
         self.document_processor = document_processor or DocumentProcessor()
 
     def _load_embeddings(self) -> HuggingFaceEmbeddings:
+        cache_key = (EMBEDDING_MODEL, EMBEDDING_MODEL_CACHE_DIR, EMBEDDING_DEVICE)
+        cached_embeddings = self._embeddings_cache.get(cache_key)
+        if cached_embeddings is not None:
+            return cached_embeddings
+
+        with self._embeddings_lock:
+            cached_embeddings = self._embeddings_cache.get(cache_key)
+            if cached_embeddings is not None:
+                return cached_embeddings
+
+            embeddings = self._create_embeddings()
+            self._embeddings_cache[cache_key] = embeddings
+            return embeddings
+
+    def _create_embeddings(self) -> HuggingFaceEmbeddings:
         model_options = {
             "model_name": EMBEDDING_MODEL,
             "cache_folder": EMBEDDING_MODEL_CACHE_DIR,
         }
         model_kwargs = {}
+        device = self._resolve_embedding_device()
+        if device:
+            model_kwargs["device"] = device
         if EMBEDDING_MODEL == "dangvantuan/vietnamese-document-embedding":
             model_kwargs["trust_remote_code"] = True
         try:
@@ -147,6 +170,23 @@ class ChromaDBManager(VectorStoreInterface):
             embeddings = HuggingFaceEmbeddings(**model_options, model_kwargs=model_kwargs)
         self._repair_embedding_model(embeddings)
         return embeddings
+
+    @staticmethod
+    def _resolve_embedding_device() -> str:
+        requested_device = (EMBEDDING_DEVICE or "auto").strip().lower()
+        if requested_device not in {"auto", "cuda", "cpu"}:
+            requested_device = "auto"
+        if requested_device == "cpu":
+            return "cpu"
+        try:
+            import torch
+
+            cuda_available = torch.cuda.is_available()
+        except Exception:
+            cuda_available = False
+        if requested_device == "cuda" and not cuda_available:
+            return "cpu"
+        return "cuda" if cuda_available else "cpu"
 
     @staticmethod
     def _repair_embedding_model(embeddings: HuggingFaceEmbeddings) -> None:
@@ -239,6 +279,15 @@ class ChromaDBManager(VectorStoreInterface):
         docs = self._article_aware_search(query, scope_filter, k)
         docs = self._merge_attached_docs(query, docs, extra_doc_ids)
         docs = self._expand_parent_context(docs)
+
+        # Sắp xếp lại các chunk theo thứ tự xuất hiện tự nhiên trong văn bản gốc
+        docs = sorted(
+            docs,
+            key=lambda d: (
+                int(d.metadata.get("doc_id") or 0),
+                int(d.metadata.get("chunk_index") or 0),
+            ),
+        )
 
         text_content = "\n\n".join(doc.page_content for doc in docs)
         sources = []

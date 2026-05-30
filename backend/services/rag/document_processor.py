@@ -73,10 +73,10 @@ _OCR_IMAGE_VARIANTS = os.getenv("TESSERACT_OCR_IMAGE_VARIANTS", "grayscale,thres
 _OCR_ACCEPT_MIN_CHARS = int(os.getenv("OCR_ACCEPT_MIN_CHARS", "80") or "80")
 _OCR_ACCEPT_MIN_CONFIDENCE = float(os.getenv("OCR_ACCEPT_MIN_CONFIDENCE", "75") or "75")
 _OCR_MAX_WORKERS = max(1, int(os.getenv("OCR_MAX_WORKERS", "5") or "5"))
-_ADMIN_CHUNK_SIZE = 1600
-_ADMIN_CHUNK_OVERLAP = 250
-_NORMAL_CHUNK_SIZE = 1800
-_NORMAL_CHUNK_OVERLAP = 300
+_ADMIN_CHUNK_SIZE = 800
+_ADMIN_CHUNK_OVERLAP = 150
+_NORMAL_CHUNK_SIZE = 900
+_NORMAL_CHUNK_OVERLAP = 200
 _HEADING_PREFIX = r"^[\s`'\"“”‘’\-\–\—\:\.;,\(\)\[\]_|lI1]*"
 _CHAPTER_WORD_PATTERN = r"Ch(?:ương|uong)"
 _CHAPTER_HEADER_PATTERN = re.compile(
@@ -734,9 +734,21 @@ def _append_parent_children(
     child_texts = [parent_text] if len(parent_text) <= _ADMIN_CHUNK_SIZE else splitter.split_text(parent_text)
     child_count = len(child_texts)
     for index, child_text in enumerate(child_texts):
-        content = child_text
-        if index > 0 and parent_header:
-            content = f"[{parent_header}] (tiếp)\n{child_text}"
+        # Lấy thông tin đường dẫn phân cấp (ví dụ: "Chương I > Điều 5")
+        section_path = parent_meta.get("section_path", "")
+        # Nếu section_path trống (ví dụ: preamble), dùng parent_header làm fallback
+        if not section_path and parent_header:
+            section_path = parent_header
+
+        # Nhúng thông tin phân cấp trực tiếp vào nội dung chunk
+        if section_path:
+            if index == 0:
+                content = f"[Nguồn: {section_path}]\n{child_text}"
+            else:
+                content = f"[Nguồn: {section_path} (tiếp)]\n{child_text}"
+        else:
+            content = child_text
+
         child_meta = {
             **parent_meta,
             "child_index": index,
