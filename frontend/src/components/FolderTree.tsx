@@ -15,6 +15,10 @@ import {
   BadgeCheck,
   Clock,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export type FolderDoc = {
   id: number;
@@ -74,13 +78,6 @@ function FileIcon({ filename }: { filename: string }) {
 
 function IndexBadge({ doc }: { doc: FolderDoc }) {
   const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
-  const styles: Record<string, string> = {
-    indexed: "bg-emerald-50 text-emerald-600 border-emerald-200",
-    queued: "bg-amber-50 text-amber-600 border-amber-200",
-    running: "bg-blue-50 text-blue-600 border-blue-200",
-    failed: "bg-red-50 text-red-600 border-red-200",
-    not_indexed: "bg-gray-50 text-gray-400 border-gray-200",
-  };
   const labels: Record<string, string> = {
     indexed: "Đã index",
     queued: "Chờ index",
@@ -89,10 +86,11 @@ function IndexBadge({ doc }: { doc: FolderDoc }) {
     not_indexed: "Chưa index",
   };
   const Icon = status === "indexed" ? BadgeCheck : Clock;
+  const variant = status === "indexed" ? "success" : status === "queued" || status === "running" ? "warning" : status === "failed" ? "destructive" : "secondary";
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${styles[status] || styles.not_indexed}`}>
+    <Badge variant={variant} className="gap-1 px-1.5 py-0.5 text-[10px]">
       <Icon className="w-3 h-3" /> {labels[status] || labels.not_indexed}
-    </span>
+    </Badge>
   );
 }
 
@@ -126,60 +124,69 @@ function DocRow({
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg group transition text-sm
-        ${selected ? "neo-inset text-[#006666]" : "border border-transparent hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.34),inset_-3px_-3px_8px_rgba(255,255,255,0.75)]"}
-        ${attached ? "ring-2 ring-emerald-400/60" : ""}
-      `}
+      className={cn(
+        "group flex items-center gap-2 rounded-md border border-transparent px-3 py-2 text-sm transition-colors hover:border-border hover:bg-muted/50",
+        selected && "border-primary/30 bg-primary/10 text-primary",
+        attached && "ring-2 ring-emerald-400/50",
+      )}
     >
       {selectMode !== "none" && (
-        <button onClick={handleCheck} className="flex-shrink-0 text-blue-500">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={handleCheck} className="h-7 w-7 flex-shrink-0 text-primary">
           {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-gray-300" />}
-        </button>
+        </Button>
       )}
 
       <FileIcon filename={doc.filename} />
 
-      <div className="flex-1 min-w-0">
-        <p className="truncate font-medium text-gray-700 text-xs">{doc.filename}</p>
-        <p className="text-[10px] text-gray-400">{doc.uploaded_at.slice(0, 10)}</p>
+      <div className="min-w-0 flex-1">
+        <p className="break-all text-xs font-medium leading-5 text-foreground">{doc.filename}</p>
+        <p className="text-[10px] text-muted-foreground">{doc.uploaded_at.slice(0, 10)}</p>
       </div>
 
       <IndexBadge doc={doc} />
 
       {attached && (
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 flex-shrink-0">
+        <Badge variant="success" className="flex-shrink-0 px-1.5 py-0.5 text-[10px]">
           Đã đính kèm
-        </span>
+        </Badge>
       )}
 
-      {/* Action buttons — visible on hover */}
       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
         {onAttach && !attached && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onAttach(doc)}
             title="Đính kèm vào chat"
-            className="p-1 rounded hover:bg-emerald-100 text-emerald-600"
+            className="h-7 w-7 text-emerald-600"
           >
             <Paperclip className="w-3.5 h-3.5" />
-          </button>
+          </Button>
         )}
         {onDownload && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onDownload(doc.id)}
             title="Tải xuống"
-            className="p-1 rounded hover:bg-blue-100 text-blue-500"
+            className="h-7 w-7 text-primary"
           >
             <Download className="w-3.5 h-3.5" />
-          </button>
+          </Button>
         )}
         {onDelete && (!canDelete || canDelete(doc)) && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onDelete(doc.id, doc.scope)}
             title="Xóa"
-            className="p-1 rounded hover:bg-red-100 text-red-400"
+            className="h-7 w-7 text-destructive"
           >
             <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -225,21 +232,23 @@ function FolderSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="mb-1">
-      <button
+    <Card className="glass-panel mb-2 overflow-hidden p-1">
+      <Button
+        type="button"
+        variant="ghost"
         onClick={() => setOpen(o => !o)}
-        className={`w-full neo-button !min-h-0 justify-start px-3 py-2 font-semibold text-xs ${colorClass} ${bgClass} hover:opacity-95`}
+        className={cn("h-10 w-full justify-start px-3 text-xs font-semibold", colorClass, bgClass)}
       >
         {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         {icon}
         <span className="flex-1 text-left">{label}</span>
-        <span className="ml-auto text-[10px] font-normal opacity-70">{docs.length} file</span>
-      </button>
+        <Badge variant="secondary" className="ml-auto px-2 py-0 text-[10px]">{docs.length} file</Badge>
+      </Button>
 
       {open && (
-        <div className="mt-1 ml-3 space-y-0.5">
+        <div className="ml-3 mt-1 space-y-1 border-l border-border/70 pl-2">
           {docs.length === 0 ? (
-            <p className="text-xs text-gray-400 px-3 py-2">Chưa có tài liệu</p>
+            <p className="px-3 py-2 text-xs text-muted-foreground">Chưa có tài liệu</p>
           ) : (
             docs.map(doc => (
               <DocRow
@@ -259,7 +268,7 @@ function FolderSection({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

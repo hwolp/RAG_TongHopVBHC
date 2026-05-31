@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { waitForJob } from "../api";
-import { BookOpen, Search, Download, FileText, RefreshCw, Upload, PencilLine, Trash2, X } from "lucide-react";
+import { BookOpen, Search, Download, FileText, RefreshCw, Upload, PencilLine, Trash2 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { useConfirmDialog } from "../components/ConfirmDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type SQPDocument = {
   id: number;
@@ -30,6 +38,7 @@ export default function SQPBrowser() {
   const [editingDoc, setEditingDoc] = useState<SQPDocument | null>(null);
   const [editFilename, setEditFilename] = useState("");
   const [jobMessage, setJobMessage] = useState("");
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -91,13 +100,6 @@ export default function SQPBrowser() {
 
   const renderIndexBadge = (doc: SQPDocument) => {
     const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
-    const styles: Record<string, string> = {
-      indexed: "bg-green-100 text-green-700",
-      queued: "bg-amber-100 text-amber-700",
-      running: "bg-blue-100 text-blue-700",
-      failed: "bg-red-100 text-red-700",
-      not_indexed: "bg-gray-100 text-gray-500",
-    };
     const labels: Record<string, string> = {
       indexed: "Đã index",
       queued: "Chờ index",
@@ -105,7 +107,8 @@ export default function SQPBrowser() {
       failed: "Index lỗi",
       not_indexed: "Chưa index",
     };
-    return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>{labels[status] || labels.not_indexed}</span>;
+    const variant = status === "indexed" ? "success" : status === "queued" || status === "running" ? "warning" : status === "failed" ? "destructive" : "secondary";
+    return <Badge variant={variant}>{labels[status] || labels.not_indexed}</Badge>;
   };
 
   const openEdit = (doc: SQPDocument) => {
@@ -121,31 +124,38 @@ export default function SQPBrowser() {
   };
 
   const handleDelete = async (docId: number) => {
-    if (!window.confirm("Xóa tài liệu SQP này?")) return;
+    const ok = await confirm({
+      title: "Xóa tài liệu SQP này?",
+      description: "Tài liệu SQP sẽ bị xóa khỏi kho quy định.",
+      confirmText: "Xóa tài liệu",
+    });
+    if (!ok) return;
     await api.delete(`/documents/sqp/${docId}`);
     await fetchDocs();
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
+    <div className="app-page max-w-6xl">
+      {confirmDialog}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quy Định & Biểu Mẫu Công Ty (SQP)</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-2xl font-bold">Quy Định & Biểu Mẫu Công Ty (SQP)</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             {isAdmin ? "Quản lý CRUD tài liệu SQP" : "Tra cứu các tài liệu dùng chung đã được phê duyệt"}
           </p>
         </div>
-        <button
+        <Button
+          type="button"
+          variant="outline"
           onClick={() => void fetchDocs()}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border rounded-lg shadow-sm hover:border-blue-300 text-sm text-gray-700"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           Làm mới
-        </button>
+        </Button>
       </div>
 
       {isAdmin && (
-        <div className="bg-white border rounded-xl shadow-sm p-5 space-y-4">
+        <Card className="glass-panel p-5 space-y-4">
           <div className="flex items-center gap-3">
             <Upload className="w-5 h-5 text-blue-600" />
             <h2 className="font-semibold text-gray-900">Tải lên tài liệu SQP</h2>
@@ -156,112 +166,107 @@ export default function SQPBrowser() {
               <span className="text-xs text-blue-600 font-medium whitespace-nowrap">Browse</span>
               <input type="file" className="hidden" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
             </label>
-            <button
+            <Button
+              type="button"
               onClick={() => void handleUpload()}
               disabled={!selectedFile || uploading}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
             >
               <Upload className="w-4 h-4" />
               {uploading ? "Đang tải lên..." : "Tải lên"}
-            </button>
+            </Button>
           </div>
-        </div>
+          {uploading && <Progress value={65} />}
+        </Card>
       )}
 
       {jobMessage && (
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+        <Card className="glass-panel px-4 py-3 text-sm text-primary">
           {jobMessage}
-        </div>
+        </Card>
       )}
 
       <div className="relative">
         <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-        <input 
+        <Input
           value={search} 
           onChange={e => setSearch(e.target.value)} 
           onKeyDown={e => e.key === "Enter" && fetchDocs()}
-          className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+          className="pl-10" 
           placeholder="Tìm kiếm quy định, chính sách, biểu mẫu..." 
         />
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Tên tài liệu</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Index</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày ban hành (Upload)</th>
-              <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="glass-panel overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tên tài liệu</TableHead>
+              <TableHead>Index</TableHead>
+              <TableHead>Ngày ban hành (Upload)</TableHead>
+              <TableHead className="text-right">Hành động</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {filteredDocs.map((d) => (
-              <tr key={d.id} className="border-b hover:bg-gray-50 transition">
-                <td className="px-4 py-4 font-medium flex items-center gap-3">
+              <TableRow key={d.id}>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-3">
                   <div className="p-2 bg-amber-50 rounded-lg"><BookOpen className="w-5 h-5 text-amber-600" /></div>
-                  <span className="text-gray-900">{d.filename}</span>
-                </td>
-                <td className="px-4 py-4">{renderIndexBadge(d)}</td>
-                <td className="px-4 py-4 text-gray-500">{d.uploaded_at?.slice(0, 10)}</td>
-                <td className="px-4 py-4 text-right">
+                  <span>{d.filename}</span>
+                  </div>
+                </TableCell>
+                <TableCell>{renderIndexBadge(d)}</TableCell>
+                <TableCell className="text-muted-foreground">{d.uploaded_at?.slice(0, 10)}</TableCell>
+                <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => handleDownload(d.id)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs hover:bg-blue-100 font-medium">
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleDownload(d.id)}>
                       <Download className="w-3.5 h-3.5" /> Tải về
-                    </button>
+                    </Button>
                     {isAdmin && (
                       <>
-                        <button onClick={() => openEdit(d)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-xs hover:bg-emerald-100 font-medium">
+                        <Button type="button" variant="outline" size="sm" onClick={() => openEdit(d)}>
                           <PencilLine className="w-3.5 h-3.5" /> Sửa
-                        </button>
-                        <button onClick={() => void handleDelete(d.id)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50" title="Xóa">
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon-sm" onClick={() => void handleDelete(d.id)} className="text-destructive" title="Xóa">
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </>
                     )}
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         {docs.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p>Không tìm thấy quy định nào.</p>
           </div>
         )}
-      </div>
+      </Card>
 
-      {editingDoc && isAdmin && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="font-bold text-lg text-gray-900">Chỉnh sửa tài liệu SQP</h3>
-                <p className="text-sm text-gray-500">Đổi tên file SQP.</p>
-              </div>
-              <button onClick={() => setEditingDoc(null)} className="p-2 rounded-lg hover:bg-gray-100">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <input
+      <Dialog open={Boolean(editingDoc && isAdmin)} onOpenChange={(open) => !open && setEditingDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa tài liệu SQP</DialogTitle>
+            <DialogDescription>Đổi tên file SQP.</DialogDescription>
+          </DialogHeader>
+            <Input
               value={editFilename}
               onChange={(event) => setEditFilename(event.target.value)}
-              className="w-full border rounded-lg px-3 py-2.5 text-sm"
               placeholder="Tên file"
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setEditingDoc(null)} className="px-4 py-2.5 rounded-lg border text-sm text-gray-600">
+              <Button type="button" variant="outline" onClick={() => setEditingDoc(null)}>
                 Hủy
-              </button>
-              <button onClick={() => void handleSaveEdit()} className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700">
+              </Button>
+              <Button type="button" onClick={() => void handleSaveEdit()}>
                 Lưu thay đổi
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

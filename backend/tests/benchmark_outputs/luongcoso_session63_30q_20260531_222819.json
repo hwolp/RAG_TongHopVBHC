@@ -1,0 +1,491 @@
+{
+  "session_id": 63,
+  "source_pdf": "C:\\Users\\ADMIN\\Downloads\\duthaoluongcoso-17749265503301968823886.pdf",
+  "generated_at": "2026-05-31T22:28:19",
+  "summary": {
+    "total": 30,
+    "success": 29,
+    "average_score": 6.24,
+    "max_context_chars": 4000
+  },
+  "results": [
+    {
+      "stt": 1,
+      "question": "Đối với các cơ quan, đơn vị đang áp dụng cơ chế tài chính, thu nhập đặc thù ở Trung ương, khoản chênh lệch nào được bảo lưu khi chuyển sang lương từ ngày 01/7/2026?",
+      "expected": "Thực hiện bảo lưu phần chênh lệch giữa tiền lương và thu nhập tăng thêm tháng 6 năm 2026 của cán bộ, công chức, viên chức với tiền lương từ ngày 01 tháng 7 năm 2026 sau khi sửa đổi hoặc bãi bỏ cơ chế tài chính và thu nhập đặc thù.",
+      "rag_answer": "Đối với các cơ quan, đơn vị đang áp dụng cơ chế tài chính, thu nhập đặc thù ở Trung ương, khoản chênh lệch giữa tiền lương và thu nhập tăng thêm tháng 6 năm 2026 của cán bộ, công chức, viên chức với tiền lương từ ngày 01 tháng 7 năm 2026 sau khi sửa đổi hoặc bãi bỏ được bảo lưu.",
+      "score": 9.2,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 483,
+      "message_id": 862,
+      "status": "success",
+      "elapsed_seconds": 12.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 2,
+      "question": "Trong thời gian chưa sửa đổi hoặc bãi bỏ cơ chế tài chính, thu nhập đặc thù ở Trung ương, mức tiền lương và thu nhập tăng thêm hằng tháng từ 01/7/2026 được tính và bị giới hạn như thế nào?",
+      "expected": "Trong thời gian chưa sửa đổi hoặc bãi bỏ các cơ chế này thì thực hiện mức tiền lương và thu nhập tăng thêm hằng tháng tính theo mức lương cơ sở 2.530.000 đồng/tháng theo cơ chế đặc thù từ ngày 01 tháng 7 năm 2026 bảo đảm không vượt quá mức tiền lương và thu nhập tăng thêm được hưởng tháng 6 năm 2026 (không bao gồm phần tiền lương và thu nhập tăng thêm do điều chỉnh hệ số tiền lương ngạch, bậc khi nâng ngạch, nâng bậc).",
+      "rag_answer": "Trong thời gian chưa sửa đổi hoặc bãi bỏ cơ chế tài chính và thu nhập đặc thù ở Trung ương, mức tiền lương và thu nhập tăng thêm hằng tháng từ 01/7/2026 được tính theo mức lương cơ sở là 2.530.000 đồng/tháng. Tuy nhiên, mức này bị giới hạn không vượt quá mức tiền lương và thu nhập tăng thêm được hưởng tháng 6/2026 (không bao gồm phần tiền lương và thu nhập tăng thêm do điều chỉnh hệ số tiền lương ngạch, bậc khi nâng ngạch, nâng bậc).",
+      "score": 6.1,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể. Thiếu/khác mốc pháp lý hoặc số liệu: 01, 6, 7.",
+      "job_id": 484,
+      "message_id": 864,
+      "status": "success",
+      "elapsed_seconds": 14.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 3,
+      "question": "Nếu tính theo cơ chế đặc thù mà tiền lương và thu nhập tăng thêm từ 01/7/2026 thấp hơn mức tiền lương theo quy định chung thì áp dụng chế độ nào?",
+      "expected": "Trường hợp tính theo nguyên tắc trên, nếu mức tiền lương và thu nhập tăng thêm từ ngày 01 tháng 7 năm 2026 theo cơ chế đặc thù thấp hơn mức tiền lương theo quy định chung thì thực hiện chế độ tiền lương theo quy định chung.",
+      "rag_answer": "Trong trường hợp tiền lương và thu nhập tăng thêm từ 01/7/2026 theo cơ chế đặc thù thấp hơn mức lương cơ sở quy định chung, áp dụng chế độ tiền lương theo quy định chung.",
+      "score": 5.1,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 01, 7.",
+      "job_id": 485,
+      "message_id": 866,
+      "status": "success",
+      "elapsed_seconds": 12.08,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 4,
+      "question": "Quỹ tiền thưởng hằng năm được xác định bằng bao nhiêu phần trăm và trên cơ sở quỹ nào?",
+      "expected": "Quỹ tiền thưởng hằng năm quy định tại Điều này nằm ngoài quỹ khen thưởng theo quy định của Luật Thi đua, khen thưởng, được xác định bằng 10% tổng quỹ tiền lương (không bao gồm phụ cấp) theo chức vụ, chức danh, ngạch, bậc và cấp bậc quân hàm của các đối tượng trong danh sách trả lương của cơ quan, đơn vị.",
+      "rag_answer": "Quỹ tiền thưởng hằng năm được xác định bằng 10% tổng quỹ tiền lương (không bao gồm phụ cấp) theo chức vụ, chức danh, ngạch, bậc và cấp bậc quân hàm của các đối tượng trong danh sách trả lương của cơ quan, đơn vị.",
+      "score": 8.3,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể.",
+      "job_id": 486,
+      "message_id": 868,
+      "status": "success",
+      "elapsed_seconds": 12.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 5,
+      "question": "Đến hết năm ngân sách, kể cả thời gian chỉnh lý quyết toán, nếu cơ quan, đơn vị không sử dụng hết quỹ tiền thưởng của năm thì xử lý ra sao?",
+      "expected": "Đến hết năm ngân sách, kể cả thời gian chỉnh lý quyết toán, nếu cơ quan, đơn vị không sử dụng hết quỹ tiền thưởng của năm thì huỷ dự toán (đối với trường hợp dư dự toán) hoặc nộp ngân sách nhà nước (đối với trường hợp dư tạm ứng).",
+      "rag_answer": "Đến hết năm ngân sách, nếu cơ quan, đơn vị không sử dụng hết quỹ tiền thưởng của năm, thì sẽ huỷ dự toán (đối với trường hợp dư dự toán) hoặc nộp ngân sách nhà nước (đối với trường hợp dư tạm ứng). [Điều 4]",
+      "score": 8.6,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 487,
+      "message_id": 870,
+      "status": "success",
+      "elapsed_seconds": 12.08,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 6,
+      "question": "Quy chế tiền thưởng của cơ quan, đơn vị phải bao gồm những nội dung nào?",
+      "expected": "Quy chế tiền thưởng phải bao gồm: phạm vi và đối tượng áp dụng; tiêu chí thưởng theo thành tích công tác đột xuất và theo kết quả đánh giá, xếp loại mức độ hoàn thành nhiệm vụ hằng năm; mức tiền thưởng cụ thể đối với từng trường hợp, không nhất thiết gắn với mức lương theo hệ số lương; quy trình, thủ tục xét thưởng; các quy định khác theo yêu cầu quản lý nếu cần thiết.",
+      "rag_answer": "Quy chế tiền thưởng của cơ quan, đơn vị phải bao gồm:\n\na) Phạm vi và đối tượng áp dụng;\nb) Tiêu chí thưởng theo thành tích công tác đột xuất и theo kết quả đánh giá, xếp loại mức độ hoàn thành nhiệm vụ hằng năm của người hưởng lương trong cơ quan, đơn vị;\nc) Mức tiền thưởng cụ thể đối với từng trường hợp, không nhất thiết phải gắn với mức lương theo hệ số lương của từng người;\nd) Quy trình, thủ tục xét thưởng.",
+      "score": 8.8,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 488,
+      "message_id": 872,
+      "status": "success",
+      "elapsed_seconds": 12.09,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 7,
+      "question": "Người đứng đầu nào có trách nhiệm xây dựng Quy chế cụ thể để thực hiện chế độ tiền thưởng?",
+      "expected": "Người đứng đầu đơn vị lực lượng vũ trang theo quy định của Bộ Quốc phòng, Bộ Công an; người đứng đầu cơ quan có thẩm quyền quản lý hoặc được phân cấp thẩm quyền quản lý cán bộ, công chức và người đứng đầu đơn vị sự nghiệp công lập có trách nhiệm xây dựng Quy chế cụ thể để thực hiện chế độ tiền thưởng.",
+      "rag_answer": "Người đứng đầu đơn vị lực lượng vũ trang có trách nhiệm xây dựng Quy chế cụ thể để thực hiện chế độ tiền thưởng, dựa trên [Điều 4, Khoản 2] của văn bản.",
+      "score": 5.2,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu.",
+      "job_id": 489,
+      "message_id": 874,
+      "status": "success",
+      "elapsed_seconds": 10.08,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 8,
+      "question": "Nguồn kinh phí của các Bộ, cơ quan trung ương để thực hiện gồm những nguồn nào?",
+      "expected": "Nguồn kinh phí của các Bộ, cơ quan trung ương gồm: 10% tiết kiệm chi thường xuyên dự toán năm 2026 tăng thêm so với dự toán năm 2025; tối thiểu 40% số thu được để lại theo chế độ năm 2026 sau khi trừ chi phí liên quan trực tiếp đến hoạt động cung cấp dịch vụ, thu phí, riêng cơ sở y tế công lập tối thiểu 35%; nguồn thực hiện cải cách tiền lương năm 2025 chưa sử dụng hết chuyển sang nếu có.",
+      "rag_answer": "Nguồn kinh phí của các Bộ, cơ quan trung ương để thực hiện các chế độ tiền thưởng bao gồm:\n\n1. Sử dụng 10% tiết kiệm chi thường xuyên (trừ các khoản tiền lương, phụ cấp theo lương, khoản có tính chất lương và các khoản chi cho con người theo chế độ) dự toán năm 2026 tăng thêm so với dự toán năm 2025 đã được cấp có thẩm quyền giao;\n2. Sử dụng tối thiểu 40% số thu được để lại theo chế độ năm 2026 sau khi trừ các chi phí liên quan trực tiếp đến hoạt động cung cấp dịch vụ, thu phí.",
+      "score": 7.6,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể. Thiếu/khác mốc pháp lý hoặc số liệu: 35%.",
+      "job_id": 490,
+      "message_id": 876,
+      "status": "success",
+      "elapsed_seconds": 12.12,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 9,
+      "question": "Nguồn kinh phí của các tỉnh, thành phố trực thuộc trung ương theo khoản 2 Điều 5 gồm những nhóm nguồn chính nào?",
+      "expected": "Nguồn kinh phí của các tỉnh, thành phố trực thuộc trung ương gồm: 70% tăng thu ngân sách địa phương năm 2025 thực hiện so với dự toán; 50% tăng thu ngân sách địa phương dự toán các năm 2026, 2025, 2024 so với dự toán năm trước; 10% tiết kiệm chi thường xuyên theo các năm/dự toán tăng thêm; nguồn cải cách tiền lương đến hết năm 2025 còn dư chuyển sang; kinh phí ngân sách địa phương tiết kiệm chi hỗ trợ hoạt động thường xuyên do tinh giản biên chế, sắp xếp tổ chức bộ máy thực hiện mô hình chính quyền địa phương 02 cấp; tối thiểu 40% số thu được để lại năm 2026, riêng cơ sở y tế công lập tối thiểu 35%.",
+      "rag_answer": "",
+      "score": 0.0,
+      "note": "Không có câu trả lời thành công: job timeout.",
+      "job_id": 491,
+      "message_id": 878,
+      "status": "timeout",
+      "elapsed_seconds": 181.23,
+      "sources": [],
+      "error": "Timeout sau 180s khi benchmark câu 9."
+    },
+    {
+      "stt": 10,
+      "question": "Đối với số thu từ dịch vụ khám bệnh, chữa bệnh, y tế dự phòng và dịch vụ y tế khác của cơ sở y tế công lập, tỷ lệ tối thiểu phải sử dụng là bao nhiêu?",
+      "expected": "Riêng đối với số thu từ việc cung cấp các dịch vụ khám bệnh, chữa bệnh, y tế dự phòng và dịch vụ y tế khác của cơ sở y tế công lập sử dụng tối thiểu 35% sau khi trừ các chi phí liên quan trực tiếp đến hoạt động cung cấp dịch vụ, thu phí.",
+      "rag_answer": "Đối với số thu từ dịch vụ khám bệnh, chữa bệnh, y tế dự phòng và dịch vụ y tế khác của cơ sở y tế công lập, tỷ lệ tối thiểu phải sử dụng là 35%.",
+      "score": 5.9,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu.",
+      "job_id": 492,
+      "message_id": 880,
+      "status": "success",
+      "elapsed_seconds": 100.37,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 11,
+      "question": "Ngân sách trung ương bổ sung kinh phí còn thiếu cho những cơ quan, địa phương nào sau khi đã thực hiện khoản 1 và khoản 2 Điều 5?",
+      "expected": "Ngân sách trung ương bổ sung nguồn kinh phí còn thiếu do điều chỉnh mức lương cơ sở và thực hiện chế độ tiền thưởng năm 2026 cho các bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ, cơ quan khác ở trung ương và các tỉnh, thành phố trực thuộc trung ương sau khi đã thực hiện quy định tại khoản 1 và khoản 2 Điều 5.",
+      "rag_answer": "Ngân sách trung ương bổ sung kinh phí còn thiếu cho các Bộ, cơ quan trung ương và các tỉnh, thành phố trực thuộc trung ương sau khi đã thực hiện khoản 1 và khoản 2 của Điều 5.",
+      "score": 5.5,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 2026.",
+      "job_id": 493,
+      "message_id": 882,
+      "status": "success",
+      "elapsed_seconds": 12.11,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 12,
+      "question": "Các đơn vị sự nghiệp công lập nhóm 1 và nhóm 2 tự bảo đảm kinh phí thực hiện cải cách tiền lương, tiền thưởng theo quy định nào?",
+      "expected": "Kinh phí thực hiện cải cách tiền lương, thực hiện chế độ tiền thưởng của viên chức, người lao động trong các đơn vị sự nghiệp công lập nhóm 1, nhóm 2 do đơn vị tự đảm bảo theo quy định tại Nghị định số 60/2021/NĐ-CP ngày 21 tháng 6 năm 2021, Nghị định số 111/2025/NĐ-CP ngày 22 tháng 5 năm 2025 và các văn bản sửa đổi, bổ sung, thay thế nếu có.",
+      "rag_answer": "Các đơn vị sự nghiệp công lập nhóm 1 và nhóm 2 tự bảo đảm kinh phí thực hiện cải cách tiền lương, tiền thưởng theo quy định tại Nghị định số [Điều 1].",
+      "score": 2.1,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 111/2025, 2021, 2025, 21, 22, 5, 6, 60/2021.",
+      "job_id": 494,
+      "message_id": 884,
+      "status": "success",
+      "elapsed_seconds": 14.11,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 13,
+      "question": "Mức lương cơ sở dùng làm căn cứ cho những việc gì theo khoản 1 Điều 3?",
+      "expected": "Mức lương cơ sở dùng làm căn cứ: tính mức lương trong các bảng lương, mức phụ cấp và thực hiện các chế độ khác theo quy định của pháp luật đối với các đối tượng tại Điều 2; tính mức hoạt động phí, sinh hoạt phí theo quy định của pháp luật; tính các khoản trích và các chế độ được hưởng theo mức lương cơ sở.",
+      "rag_answer": "Mức lương cơ sở dùng làm căn cứ cho:\n\na) Tính mức lương trong các bảng lương, mức phụ cấp và thực hiện các chế độ khác theo quy định của pháp luật đối với các đối tượng quy định tại Điều 2 Nghị định này;\nb) Tính mức hoạt động phí, sinh hoạt phí theo quy định của pháp luật;\nc) Tính các khoản trích và các chế độ được hưởng theo mức lương cơ sở.",
+      "score": 10.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 495,
+      "message_id": 886,
+      "status": "success",
+      "elapsed_seconds": 14.09,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 14,
+      "question": "Từ ngày nào mức lương cơ sở là 2.530.000 đồng/tháng?",
+      "expected": "Từ ngày 01 tháng 7 năm 2026, mức lương cơ sở là 2.530.000 đồng/tháng.",
+      "rag_answer": "Mức lương cơ sở là 2.530.000 đồng/tháng từ ngày 01 tháng 7 năm 2026.",
+      "score": 8.1,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể. Thiếu/khác mốc pháp lý hoặc số liệu: 2026.",
+      "job_id": 496,
+      "message_id": 888,
+      "status": "success",
+      "elapsed_seconds": 12.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 15,
+      "question": "Chính phủ điều chỉnh mức lương cơ sở sau khi báo cáo Quốc hội xem xét, quyết định dựa trên những yếu tố nào?",
+      "expected": "Chính phủ điều chỉnh mức lương cơ sở sau khi báo cáo Quốc hội xem xét, quyết định phù hợp khả năng ngân sách nhà nước, chỉ số giá tiêu dùng và tốc độ tăng trưởng kinh tế của đất nước.",
+      "rag_answer": "Điều chỉnh mức lương cơ sở sau khi Chính phủ báo cáo Quốc hội xem xét, quyết định dựa trên những yếu tố: chỉ số giá tiêu dùng và tốc độ tăng trưởng kinh tế của đất nước.",
+      "score": 8.5,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 497,
+      "message_id": 890,
+      "status": "success",
+      "elapsed_seconds": 14.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 16,
+      "question": "Chế độ tiền thưởng được thực hiện trên cơ sở những tiêu chí nào?",
+      "expected": "Thực hiện chế độ tiền thưởng trên cơ sở thành tích công tác đột xuất và kết quả đánh giá, xếp loại mức độ hoàn thành nhiệm vụ hằng năm đối với các đối tượng quy định tại khoản 2 Điều 2 Nghị định này.",
+      "rag_answer": "Chế độ tiền thưởng được thực hiện trên cơ sở tiêu chí thành tích công tác đột xuất dan và kết quả đánh giá, xếp loại mức độ hoàn thành nhiệm vụ hằng năm.",
+      "score": 6.5,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể. Thiếu/khác mốc pháp lý hoặc số liệu: 2.",
+      "job_id": 498,
+      "message_id": 892,
+      "status": "success",
+      "elapsed_seconds": 12.08,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 17,
+      "question": "Chế độ tiền thưởng được dùng để thưởng những loại nào?",
+      "expected": "Chế độ tiền thưởng được dùng để thưởng đột xuất theo thành tích công tác và thưởng định kỳ hằng năm theo kết quả đánh giá, xếp loại mức độ hoàn thành công việc của từng người hưởng lương trong cơ quan, đơn vị.",
+      "rag_answer": "Chế độ tiền thưởng được dùng để thưởng đột xuất theo thành tích công tác dan và thưởng định kỳ hằng năm theo kết quả đánh giá, xếp loại mức độ hoàn thành công việc của từng người hưởng lương trong cơ quan, đơn vị.",
+      "score": 10.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 499,
+      "message_id": 894,
+      "status": "success",
+      "elapsed_seconds": 12.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 18,
+      "question": "Theo khoản 2 Điều 2, những đối tượng nào thuộc đối tượng áp dụng chế độ tiền thưởng?",
+      "expected": "Người hưởng lương quy định tại các điểm a, b, c, d, đ, e và g khoản 1 Điều 2, không bao gồm đối tượng hưởng phụ cấp, sinh hoạt phí, thuộc đối tượng áp dụng chế độ tiền thưởng.",
+      "rag_answer": "Theo khoản 2 Điều 2, những đối tượng thuộc đối tượng áp dụng chế độ tiền thưởng bao gồm:\n\n- Cán bộ, công chức từ Trung ương đến cấp xã quy định tại Điều 1 Luật Cán bộ, công chức;\n- Viên chức trong các đơn vị sự nghiệp công lập quy định tại Điều 1 Luật Viên chức;\n- Người làm các công việc theo chế độ hợp đồng lao động quy định tại Nghị định số 111/2022/NĐ-CP;\n- Người làm việc trong chỉ tiêu biên chế tại các hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động quy định tại Nghị định số 126/2024/NĐ-CP;\n- Sĩ quan, quân nhân chuyên nghiệp, công nhân, viên chức quốc phòng và lao động hợp đồng thuộc Quân đội nhân dân Việt Nam;\n- Sĩ quan, hạ sĩ quan hưởng lương, công nhân công an và lao động hợp đồng thuộc Công an nhân dân;\n- Người làm việc trong tổ chức cơ yếu;\n- Hạ sĩ quan và binh sĩ thuộc Quân đội nhân dân Việt Nam;\n- Hạ sĩ quan và chiến sĩ nghĩa vụ thuộc Công an nhân dân;\n- Người hoạt động không chuyên trách ở thôn và tổ dân phố.",
+      "score": 9.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 500,
+      "message_id": 896,
+      "status": "success",
+      "elapsed_seconds": 22.12,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 19,
+      "question": "Liệt kê các nhóm người hưởng lương, phụ cấp áp dụng mức lương cơ sở theo khoản 1 Điều 2.",
+      "expected": "Bao gồm cán bộ, công chức từ Trung ương đến cấp xã; viên chức trong đơn vị sự nghiệp công lập; người làm việc theo hợp đồng lao động theo Nghị định 111/2022/NĐ-CP thuộc trường hợp được áp dụng hoặc thỏa thuận xếp lương theo Nghị định 204/2004/NĐ-CP; người làm việc trong chỉ tiêu biên chế tại hội được ngân sách hỗ trợ; sĩ quan, quân nhân chuyên nghiệp, công nhân, viên chức quốc phòng và lao động hợp đồng thuộc Quân đội nhân dân; sĩ quan, hạ sĩ quan hưởng lương, công nhân công an và lao động hợp đồng thuộc Công an nhân dân; người làm việc trong tổ chức cơ yếu; hạ sĩ quan và binh sĩ thuộc Quân đội nhân dân, hạ sĩ quan và chiến sĩ nghĩa vụ thuộc Công an nhân dân; người hoạt động không chuyên trách ở thôn và tổ dân phố.",
+      "rag_answer": "Văn bản gồm các phần sau:\n- Tổng số điều: 7\n- Điều 1: Phạm vi điều chỉnh\n- Điều 2: Đối tượng áp dụng\n- Điều 3: Mức lương cơ sở\n- Điều 4: Chế độ tiền thưởng\n- Điều 5: Kinh phí thực hiện\n- Điều 6: Hiệu lực THI HÀNH\n- Điều 7: Trách nhiệm THI HÀNH",
+      "score": 0.0,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 111/2022, 204/2004, nđ-cp.",
+      "job_id": 501,
+      "message_id": 898,
+      "status": "success",
+      "elapsed_seconds": 6.05,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 20,
+      "question": "Người làm việc trong chỉ tiêu biên chế tại các hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động được viện dẫn theo nghị định nào?",
+      "expected": "Người làm việc trong chỉ tiêu biên chế tại các hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động theo quy định tại Nghị định số 126/2024/NĐ-CP ngày 08 tháng 10 năm 2024 của Chính phủ quy định về tổ chức, hoạt động và quản lý hội.",
+      "rag_answer": "Theo [Điều 2] của Nghị định này, người làm việc trong chỉ tiêu biên chế tại các hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động được viện dẫn dựa trên điểm d của Điều 2.",
+      "score": 3.2,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 08, 10, 126/2024, 2024, nđ-cp.",
+      "job_id": 502,
+      "message_id": 900,
+      "status": "success",
+      "elapsed_seconds": 14.11,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 21,
+      "question": "Người làm công việc theo hợp đồng lao động trong cơ quan hành chính và đơn vị sự nghiệp công lập được nhắc đến theo Nghị định nào?",
+      "expected": "Người làm các công việc theo chế độ hợp đồng lao động quy định tại Nghị định số 111/2022/NĐ-CP ngày 30 tháng 12 năm 2022 của Chính phủ, thuộc trường hợp được áp dụng hoặc có thỏa thuận trong hợp đồng lao động áp dụng xếp lương theo Nghị định số 204/2004/NĐ-CP ngày 14 tháng 12 năm 2004.",
+      "rag_answer": "Người làm công việc theo hợp đồng lao động trong cơ quan hành chính và đơn vị sự nghiệp công lập được viện dẫn theo Nghị định 111/2022/NĐ-CP [Điều 2, Khoản c)].",
+      "score": 0.8,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 12, 14, 2004., 2022, 204/2004, 30.",
+      "job_id": 503,
+      "message_id": 902,
+      "status": "success",
+      "elapsed_seconds": 14.34,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 22,
+      "question": "Nghị định này quy định phạm vi điều chỉnh đối với những cơ quan, tổ chức, địa bàn và lực lượng nào?",
+      "expected": "Nghị định này quy định mức lương cơ sở áp dụng đối với người hưởng lương, phụ cấp và chế độ tiền thưởng áp dụng đối với người hưởng lương làm việc trong các cơ quan, tổ chức, đơn vị sự nghiệp công lập của Đảng, Nhà nước, Mặt trận Tổ quốc Việt Nam, tổ chức chính trị - xã hội và hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động ở Trung ương, cấp tỉnh, cấp xã, đơn vị hành chính - kinh tế đặc biệt và lực lượng vũ trang.",
+      "rag_answer": "Nghị định này quy định phạm vi điều chỉnh đối với những cơ quan, tổ chức, địa bàn và lực lượng như berờì Đảng, Nhà nước, Mặt trận Tổ quốc Việt Nam, tổ chức chính trị - xã hội và hội được ngân sách nhà nước hỗ trợ kinh phí hoạt động. Cụ thể, phạm vi điều chỉnh bao gồm các cơ quan, đơn vị sự nghiệp công lập ở Trung ương, tỉnh, thành phố trực thuộc trung ương, xã, phường, đặc khu trực thuộc cấp tỉnh, đơn vị hành chính - kinh tế đặc biệt và lực lượng vũ trang.",
+      "score": 7.8,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể.",
+      "job_id": 504,
+      "message_id": 904,
+      "status": "success",
+      "elapsed_seconds": 16.1,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 23,
+      "question": "Trong Nghị định, cấp tỉnh và cấp xã được hiểu như thế nào?",
+      "expected": "Tỉnh, thành phố trực thuộc trung ương gọi chung là cấp tỉnh; xã, phường, đặc khu trực thuộc cấp tỉnh gọi chung là cấp xã.",
+      "rag_answer": "Nghị định này quy định cấp tỉnh và cấp xã sebagai các cấp của cơ quan, đơn vị sự nghiệp công lập ở Trung ương, tỉnh, thành phố trực thuộc trung ương, xã, phường, đặc khu trực thuộc cấp tỉnh, đơn vị hành chính - kinh tế đặc biệt và lực lượng vũ trang.",
+      "score": 7.9,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể.",
+      "job_id": 505,
+      "message_id": 906,
+      "status": "success",
+      "elapsed_seconds": 12.07,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 24,
+      "question": "Nghị định này có hiệu lực thi hành từ ngày nào?",
+      "expected": "Nghị định này có hiệu lực thi hành kể từ ngày 01 tháng 7 năm 2026.",
+      "rag_answer": "Nghị định này có hiệu lực thi hành từ ngày 01 tháng 7 năm 2026, theo Điều 6 [Điều 6] của văn bản đã nạp.",
+      "score": 8.3,
+      "note": "Đúng một phần nhưng còn thiếu ý đáng kể. Thiếu/khác mốc pháp lý hoặc số liệu: 2026..",
+      "job_id": 506,
+      "message_id": 908,
+      "status": "success",
+      "elapsed_seconds": 12.08,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 25,
+      "question": "Nghị định nào hết hiệu lực kể từ ngày Nghị định này có hiệu lực thi hành?",
+      "expected": "Nghị định số 73/2024/NĐ-CP ngày 30 tháng 6 năm 2024 của Chính phủ quy định mức lương cơ sở và chế độ tiền thưởng đối với cán bộ, công chức, viên chức và lực lượng vũ trang hết hiệu lực kể từ ngày Nghị định này có hiệu lực thi hành.",
+      "rag_answer": "Nghị định số 73/2024/NĐ-CP hết hiệu lực kể từ ngày Nghị định này có hiệu lực thi hành.该回答基于提供的文档信息。",
+      "score": 0.9,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu. Thiếu/khác mốc pháp lý hoặc số liệu: 2024, 30, 6.",
+      "job_id": 507,
+      "message_id": 910,
+      "status": "success",
+      "elapsed_seconds": 12.09,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 26,
+      "question": "Bộ trưởng Bộ Nội vụ có trách nhiệm hướng dẫn thực hiện nội dung nào?",
+      "expected": "Bộ trưởng Bộ Nội vụ hướng dẫn thực hiện các quy định về mức lương cơ sở tại Nghị định này đối với các đối tượng hưởng lương, phụ cấp trong các cơ quan, tổ chức, đơn vị sự nghiệp công lập của Đảng, Nhà nước, Mặt trận Tổ quốc Việt Nam, tổ chức chính trị - xã hội và hội.",
+      "rag_answer": "Bộ trưởng Bộ Nội vụ có trách nhiệm hướng dẫn thực hiện các quy định về mức lương cơ sở tại Nghị định này đối với các đối tượng hưởng lương, phụ cấp trong các cơ quan, tổ chức, đơn vị sự nghiệp công lập của Đảng, Nhà nước, Mặt trận Tổ quốc Việt Nam, tổ chức chính trị - xã hội và hội.",
+      "score": 10.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 508,
+      "message_id": 912,
+      "status": "success",
+      "elapsed_seconds": 12.07,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 27,
+      "question": "Bộ trưởng Bộ Quốc phòng và Bộ trưởng Bộ Công an có trách nhiệm gì?",
+      "expected": "Bộ trưởng Bộ Quốc phòng, Bộ trưởng Bộ Công an hướng dẫn thực hiện các quy định tại Nghị định này đối với các đối tượng thuộc phạm vi quản lý.",
+      "rag_answer": "Bộ trưởng Bộ Quốc phòng và Bộ trưởng Bộ Công an có trách nhiệm hướng dẫn thực hiện các quy định tại Nghị định này đối với các đối tượng thuộc phạm vi quản lý.",
+      "score": 10.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 509,
+      "message_id": 914,
+      "status": "success",
+      "elapsed_seconds": 10.09,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 28,
+      "question": "Bộ trưởng Bộ Tài chính có những trách nhiệm nào theo khoản 3 Điều 7?",
+      "expected": "Bộ trưởng Bộ Tài chính hướng dẫn việc xác định nhu cầu, nguồn và phương thức chi thực hiện mức lương cơ sở và chế độ tiền thưởng, phạm vi trích số thu được để lại; hướng dẫn việc chi tiền lương và thu nhập đối với các cơ quan, đơn vị đang thực hiện cơ chế tài chính, thu nhập đặc thù ở trung ương trong thời gian chưa sửa đổi hoặc bãi bỏ; tổng hợp nhu cầu nguồn và trình cấp có thẩm quyền bổ sung kinh phí còn thiếu.",
+      "rag_answer": "Bộ trưởng Bộ Tài chính có những trách nhiệm theo khoản 3 Điều 7 như sau:\n\na) Hướng dẫn việc xác định nhu cầu, nguồn và phương thức chi thực hiện mức lương cơ sở và chế độ tiền thưởng quy định tại Nghị định này, phạm vi trích số thu được để lại quy định tại điểm b khoản 1 và điểm e khoản 2 Điều 5 Nghị định này.\n\nb) Hướng dẫn việc chi tiền lương và thu nhập đối với các cơ quan, đơn vị đang thực hiện các cơ chế tài chính, thu nhập đặc thù ở trung ương quy định tại khoản 3 Điều 3 Nghị định này trong thời gian chưa sửa đổi hoặc bãi bỏ các cơ chế tài chính, thu nhập đặc thù.\n\nc) Tổng hợp nhu cầu nguồn và trình cấp có thẩm quyền bổ sung kinh phí còn thiếu do thực hiện điều chỉnh mức lương cơ sở và chế độ tiền thưởng của các bộ, cơ quan ngang bộ, cơ quan thuộc Chính phủ, cơ quan khác ở trung ương và các tỉnh, thành phố trực thuộc trung ương theo quy định tại Nghị định này.",
+      "score": 10.0,
+      "note": "Đúng phần lớn nội dung cốt lõi.",
+      "job_id": 510,
+      "message_id": 916,
+      "status": "success",
+      "elapsed_seconds": 20.12,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 29,
+      "question": "Dự thảo Nghị định này được Chính phủ ban hành theo đề nghị của ai?",
+      "expected": "Theo đề nghị của Bộ trưởng Bộ Nội vụ; Chính phủ ban hành Nghị định quy định mức lương cơ sở và chế độ tiền thưởng đối với cán bộ, công chức, viên chức và lực lượng vũ trang.",
+      "rag_answer": "Dự thảo Nghị định này được Chính phủ ban hành theo đề nghị của Bộ trưởng Bộ Nội vụ.",
+      "score": 3.8,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu.",
+      "job_id": 511,
+      "message_id": 918,
+      "status": "success",
+      "elapsed_seconds": 10.09,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    },
+    {
+      "stt": 30,
+      "question": "Tên đầy đủ của dự thảo Nghị định là gì?",
+      "expected": "NGHỊ ĐỊNH Quy định mức lương cơ sở và chế độ tiền thưởng đối với cán bộ, công chức, viên chức và lực lượng vũ trang.",
+      "rag_answer": "Dự thảo số 2 /09/3/2026/NĐ-CP",
+      "score": 0.0,
+      "note": "Sai hoặc thiếu nhiều ý trọng yếu.",
+      "job_id": 512,
+      "message_id": 920,
+      "status": "success",
+      "elapsed_seconds": 10.07,
+      "sources": [
+        "62"
+      ],
+      "error": null
+    }
+  ]
+}

@@ -1,11 +1,16 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import { LockKeyhole } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
 
@@ -28,48 +33,65 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-6">
-      <div className="neo-panel w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <div className="mx-auto bg-[#006666] h-14 w-14 rounded-lg flex items-center justify-center mb-5 text-white shadow-[8px_8px_18px_rgba(0,62,62,0.24),-8px_-8px_18px_rgba(255,255,255,0.72)]">
+      <Card className="glass-panel w-full max-w-md overflow-hidden">
+        <CardHeader className="space-y-5 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-lg shadow-primary/20">
             <LockKeyhole className="w-7 h-7" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Cổng Quản Trị Hành Chính</h1>
-          <p className="text-sm text-slate-500 mt-2">Vui lòng đăng nhập để sử dụng trí tuệ nhân tạo</p>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50/70 p-4 text-red-700">
-            <p className="text-sm font-medium">{error}</p>
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Tên Đăng Nhập</label>
-            <input 
-              type="text" 
-              value={username} onChange={(e) => setUsername(e.target.value)}
-              className="neo-input px-4 py-3"
-              placeholder="VD: admin, tp_nhansu"
-              required 
-            />
+            <CardTitle className="text-2xl">Hệ thống AI tổng hợp và tóm tắt văn bản hành chính</CardTitle>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Mật khẩu</label>
-            <input 
-              type="password" 
-              value={password} onChange={(e) => setPassword(e.target.value)}
-              className="neo-input px-4 py-3"
-              placeholder="••••••••"
-              required 
-            />
-          </div>
+        </CardHeader>
+
+        <CardContent>
+          {error && (
+            <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-destructive">
+              <p className="text-sm font-medium">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="username">Tên đăng nhập</Label>
+              <Input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Mật khẩu</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-11"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                  title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
           
-          <button type="submit" className="neo-button neo-button-primary w-full py-3 px-4">
-            Đăng Nhập Trực Tuyến
-          </button>
-        </form>
-      </div>
+            <Button type="submit" className="h-11 w-full">
+              Đăng nhập
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 
 type Department = {
   id: number;
@@ -62,6 +63,7 @@ export default function ManagerDocs() {
   const [shareMode, setShareMode] = useState<"department" | "user">("department");
   const [sharing, setSharing] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const refreshShares = async () => {
     try {
@@ -154,7 +156,12 @@ export default function ManagerDocs() {
   };
 
   const handleDelete = async (id: number, _scope?: string) => {
-    if (!confirm("Xóa tài liệu?")) return;
+    const ok = await confirm({
+      title: "Xóa tài liệu?",
+      description: "Tài liệu phòng ban sẽ bị xóa khỏi hệ thống.",
+      confirmText: "Xóa tài liệu",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/manager/department/documents/${id}`);
       fetchDocs();
@@ -216,7 +223,13 @@ export default function ManagerDocs() {
   };
 
   const handleRevokeShare = async (shareId: number) => {
-    if (!confirm("Hủy chia sẻ tài liệu này?")) return;
+    const ok = await confirm({
+      title: "Hủy chia sẻ tài liệu này?",
+      description: "Người nhận sẽ không còn thấy tài liệu qua lượt chia sẻ này.",
+      confirmText: "Hủy chia sẻ",
+      variant: "warning",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/manager/share/${shareId}`);
       await refreshShares();
@@ -251,6 +264,7 @@ export default function ManagerDocs() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-6">
+      {confirmDialog}
       {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>

@@ -90,6 +90,13 @@ def _seed(db: Session) -> None:
         owner_id=2,
         department_id=2,
     )
+    sqp_doc = models.Document(
+        id=13,
+        filename="company.pdf",
+        file_path="uploads/sqp/company.pdf",
+        scope=models.ScopeEnum.sqp,
+        owner_id=1,
+    )
     session = models.ChatSession(id=20, user_id=3, title="s1")
     message = models.ChatMessage(
         id=30,
@@ -99,7 +106,21 @@ def _seed(db: Session) -> None:
         sources='["10","11"]',
     )
     prompt = models.SavedPrompt(id=40, user_id=3, content="saved question")
-    db.add_all([admin_dept, dept, dept_b, admin_user, manager_user, employee_user, personal_doc, department_doc_a, department_doc_b, session, message, prompt])
+    db.add_all([
+        admin_dept,
+        dept,
+        dept_b,
+        admin_user,
+        manager_user,
+        employee_user,
+        personal_doc,
+        department_doc_a,
+        department_doc_b,
+        sqp_doc,
+        session,
+        message,
+        prompt,
+    ])
     db.commit()
 
 
@@ -414,3 +435,35 @@ def test_chat_answer_waits_for_unindexed_attachment():
     ai_message = db.query(models.ChatMessage).filter(models.ChatMessage.id == ai_message_id).first()
     assert "chưa index xong" in ai_message.content
     assert ai_message.sources == "[]"
+
+
+def test_employee_can_attach_visible_department_and_company_documents():
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+
+    tree = client.get("/chat/documents/tree")
+    assert tree.status_code == 200
+    payload = tree.json()
+    assert any(item["id"] == 11 for item in payload["department"]["IT"])
+    assert any(item["id"] == 13 for item in payload["company"])
+
+    department_attached = client.post("/chat/sessions/20/attach", json={"doc_id": 11})
+    assert department_attached.status_code == 200
+    assert department_attached.json()["status"] == "attached"
+
+    company_attached = client.post("/chat/sessions/20/attach", json={"doc_id": 13})
+    assert company_attached.status_code == 200
+    assert company_attached.json()["status"] == "attached"
+
+
+def test_deleted_document_cannot_be_attached():
+    client, db, current_user = _client_and_db()
+    current_user.update({"id": 3, "role": "employee", "sub": "employee"})
+
+    doc = db.query(models.Document).filter(models.Document.id == 10).first()
+    doc.is_deleted = True
+    db.commit()
+
+    attached = client.post("/chat/sessions/20/attach", json={"doc_id": 10})
+    assert attached.status_code == 404
+

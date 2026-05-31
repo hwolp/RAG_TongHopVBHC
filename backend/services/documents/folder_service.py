@@ -128,7 +128,7 @@ def attach_doc_to_session(db: Session, user_id: int, session_id: int, doc_id: in
         raise HTTPException(status_code=404, detail="Session không tồn tại")
 
     # Verify doc access
-    doc = documents.get(doc_id)
+    doc = documents.get_active(doc_id)
     if not doc:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Tài liệu không tồn tại")
@@ -192,7 +192,7 @@ def list_session_attachments(db: Session, user_id: int, session_id: int) -> list
 
     result = []
     for att in attachments:
-        doc = documents.get(att.doc_id)
+        doc = documents.get_active(att.doc_id)
         if doc and can_access_document(db, user, doc):
             result.append({
                 "doc_id": att.doc_id,

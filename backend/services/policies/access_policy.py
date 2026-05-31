@@ -31,10 +31,8 @@ def can_access_document(db: Session, user: models.User | None, doc: models.Docum
         return True
 
     if scope == "department":
-        # Only manager can read own department by default.
-        if user.role == models.RoleEnum.manager and user.department_id == doc.department_id:
+        if user.department_id == doc.department_id:
             return True
-        # Employee/manager from other departments can read only when explicitly shared.
         return is_document_shared_with_user(db, user, doc)
 
     return False

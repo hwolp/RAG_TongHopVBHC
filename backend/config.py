@@ -90,7 +90,7 @@ OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "600"))
 OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0"))
 
 # === ChromaDB Config ===
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_DIR", "./database/chromadb_storage")
+CHROMA_PERSIST_DIR = _backend_path(os.getenv("CHROMA_DIR", "./database/chromadb_storage"))
 EMBEDDING_MODEL_BASE_URL = os.getenv("EMBEDDING_MODEL_BASE_URL", "sentence-transformers")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "dangvantuan/vietnamese-document-embedding")
 EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto")

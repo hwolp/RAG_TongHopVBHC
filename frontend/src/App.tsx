@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
@@ -10,6 +11,7 @@ import AdminSystem from './pages/AdminSystem';
 import ManagerDocs from './pages/ManagerDocs';
 import SQPBrowser from './pages/SQPBrowser';
 import { useAuth } from './hooks/useAuth';
+import { SidebarProvider } from '@/components/ui/sidebar';
 
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
   const { user, loading } = useAuth();
@@ -19,12 +21,29 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
   return <>{children}</>;
 };
 
-const Layout = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-screen overflow-hidden">
-    <Sidebar />
-    <main className="flex-1 overflow-y-auto bg-transparent">{children}</main>
-  </div>
-);
+const Layout = ({ children }: { children: React.ReactNode }) => {
+  const location = useLocation();
+  const isChatRoute = location.pathname === "/chat";
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
+    localStorage.getItem("ragGovSidebarCollapsed") === "true"
+  ));
+
+  useEffect(() => {
+    localStorage.setItem("ragGovSidebarCollapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  return (
+    <SidebarProvider open={!sidebarCollapsed} onOpenChange={(open) => setSidebarCollapsed(!open)}>
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
+      />
+      <main className={`min-h-0 flex-1 bg-transparent ${isChatRoute ? "overflow-hidden" : "overflow-y-auto"}`}>
+        {children}
+      </main>
+    </SidebarProvider>
+  );
+};
 
 export default function App() {
   return (

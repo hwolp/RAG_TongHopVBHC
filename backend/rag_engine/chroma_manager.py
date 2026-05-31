@@ -72,8 +72,8 @@ _STRUCTURE_CONTEXT_METADATA_LIMIT = 5000
 _STRUCTURE_CONTEXT_PREFIX = "Văn bản gồm các phần sau:"
 _ARTICLE_DIRECT_RETRIEVAL_MAX = 2   # tối đa retrieve trực tiếp 2 Điều / query
 _ARTICLE_DIRECT_CHUNK_LIMIT = 10    # một Điều hiếm khi có > 30 chunks
-_MAX_CONTEXT_CHUNKS = 12
-_MAX_CONTEXT_CHARS = 10000
+_MAX_CONTEXT_CHUNKS = 5  #Mac dinh 12 tối đa 5 chunks liên quan đến một Điều để tránh quá tải context khi Điều đó có nhiều khoản nhỏ
+_MAX_CONTEXT_CHARS = 4000  # tối đa 4000 ký tự liên quan đến một Điều để tránh quá tải context khi Điều đó có nhiều khoản nhỏ
 _KEYWORD_SCAN_LIMIT = 5000
 _LEXICAL_CANDIDATE_LIMIT = 24
 _ARTICLE_QUERY_PATTERN = re.compile(
@@ -893,20 +893,42 @@ class ChromaDBManager(VectorStoreInterface):
 
     @staticmethod
     def _sort_scored_docs(scored: dict[tuple[str, str, str, str], tuple[float, LCDocument]]) -> list[LCDocument]:
-        return [
-            doc
-            for _, doc in sorted(
-                scored.values(),
+        # 1. Nhóm các chunk theo (doc_id, parent_id)
+        groups: dict[tuple[int, str], list[tuple[float, LCDocument]]] = {}
+        for score, doc in scored.values():
+            meta = doc.metadata or {}
+            doc_id = int(meta.get("doc_id") or 0)
+            parent_id = str(meta.get("parent_id") or "")
+            groups.setdefault((doc_id, parent_id), []).append((score, doc))
+
+        # 2. Điểm đại diện của nhóm = Điểm cao nhất của chunk trong nhóm đó
+        group_max_scores: dict[tuple[int, str], float] = {
+            key: max(score for score, _ in items)
+            for key, items in groups.items()
+        }
+
+        # 3. Sắp xếp nhóm theo điểm đại diện giảm dần, rồi xếp các chunk trong nhóm theo thứ tự tự nhiên
+        sorted_docs = []
+        for (doc_id, parent_id), items in sorted(
+            groups.items(),
+            key=lambda x: (
+                -group_max_scores[x[0]],  # Nhóm điểm cao nhất lên đầu
+                x[0][0],                  # doc_id
+                x[0][1],                  # parent_id
+            )
+        ):
+            # Sắp xếp các chunk nội bộ theo thứ tự xuất hiện gốc trong văn bản
+            sorted_items = sorted(
+                items,
                 key=lambda item: (
-                    -item[0],
-                    int(item[1].metadata.get("doc_id") or 0),
-                    str(item[1].metadata.get("article_number") or ""),
                     int(item[1].metadata.get("parent_index") or 0),
                     int(item[1].metadata.get("child_index") or 0),
                     int(item[1].metadata.get("chunk_index") or 0),
-                ),
+                )
             )
-        ]
+            for _, doc in sorted_items:
+                sorted_docs.append(doc)
+        return sorted_docs
 
     def _best_parent_seed_score(self, doc: LCDocument, seeds: list[LCDocument]) -> float:
         metadata = doc.metadata or {}

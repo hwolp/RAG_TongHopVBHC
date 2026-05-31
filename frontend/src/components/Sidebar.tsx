@@ -1,55 +1,157 @@
-import { Home, MessageSquare, FileText, Users, Settings, FolderKanban, LogOut, BookOpen, Zap } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
-import { Link, useLocation } from 'react-router-dom';
+import {
+  BookOpen,
+  FileText,
+  FolderKanban,
+  Home,
+  LogOut,
+  MessageSquare,
+  Settings,
+  Users,
+  Zap,
+} from "lucide-react";
+import type React from "react";
+import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Sidebar as ShadcnSidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
-export default function Sidebar() {
-  const { user, logout } = useAuth();
+type SidebarProps = {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+};
+
+type NavItem = {
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+function NavLinkItem({ item }: { item: NavItem }) {
   const location = useLocation();
-  const isActive = (path: string) => location.pathname === path
-    ? "bg-[#006666] text-white shadow-[inset_3px_3px_8px_rgba(0,45,45,0.32),inset_-3px_-3px_8px_rgba(255,255,255,0.16)]"
-    : "text-slate-600 hover:text-[#006666] hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.38),inset_-3px_-3px_8px_rgba(255,255,255,0.82)]";
+  const { collapsed } = useSidebar();
+  const Icon = item.icon;
 
   return (
-    <div className="w-64 bg-[#e7e5e4] border-r border-white/60 flex flex-col shadow-[10px_0_24px_rgba(159,154,148,0.28)]">
-      <div className="p-4 flex items-center gap-3 border-b border-white/60 mb-2">
-        <div className="w-10 h-10 rounded-lg bg-[#006666] flex items-center justify-center text-white shadow-[7px_7px_16px_rgba(0,62,62,0.24),-7px_-7px_16px_rgba(255,255,255,0.72)]">
-          <Zap className="w-5 h-5" />
-        </div>
-        <div>
-          <span className="font-display font-bold text-slate-900 tracking-wide text-sm">RAG.Gov</span>
-          <p className="text-[10px] text-slate-500">AI hành chính</p>
-        </div>
-      </div>
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={location.pathname === item.path} tooltip={item.label}>
+        <Link to={item.path}>
+          <Icon className="h-4 w-4" />
+          {!collapsed && <span>{item.label}</span>}
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
 
-      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
-        <p className="text-[10px] font-bold text-slate-500 tracking-widest mb-2 px-3 uppercase">Cá nhân</p>
-        <Link to="/" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/')}`}><Home className="w-4 h-4" />Dashboard</Link>
-        <Link to="/chat" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/chat')}`}><MessageSquare className="w-4 h-4" />Hỏi Đáp RAG</Link>
-        <Link to="/library" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/library')}`}><FileText className="w-4 h-4" />Kho Cá Nhân</Link>
-        <Link to="/sqp" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/sqp')}`}><BookOpen className="w-4 h-4" />Quy Định (SQP)</Link>
+export default function Sidebar({ onToggleCollapsed }: SidebarProps) {
+  const { user, logout } = useAuth();
+  const { collapsed } = useSidebar();
 
-        {user?.role === 'manager' && (<>
-          <p className="text-[10px] font-bold text-slate-500 tracking-widest mb-2 px-3 uppercase mt-6">Phòng ban</p>
-          <Link to="/manager/docs" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/manager/docs')}`}><FolderKanban className="w-4 h-4" />Thư Mục Chung</Link>
-        </>)}
+  const personalItems: NavItem[] = [
+    { label: "Dashboard", path: "/", icon: Home },
+    { label: "Hỏi Đáp RAG", path: "/chat", icon: MessageSquare },
+    { label: "Kho Cá Nhân", path: "/library", icon: FileText },
+    { label: "Quy Định (SQP)", path: "/sqp", icon: BookOpen },
+  ];
 
-        {user?.role === 'admin' && (<>
-          <p className="text-[10px] font-bold text-slate-500 tracking-widest mb-2 px-3 uppercase mt-6">Hệ thống</p>
-          <Link to="/admin/users" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/users')}`}><Users className="w-4 h-4" />Tài Khoản</Link>
-          <Link to="/admin/documents" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/documents')}`}><FolderKanban className="w-4 h-4" />Tài liệu & Chia sẻ</Link>
-          <Link to="/admin/system" className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm ${isActive('/admin/system')}`}><Settings className="w-4 h-4" />Bảo Trì Hệ Thống</Link>
-        </>)}
-      </nav>
+  const managerItems: NavItem[] = [
+    { label: "Thư Mục Chung", path: "/manager/docs", icon: FolderKanban },
+  ];
 
-      <div className="p-3 border-t border-white/60">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-[#e7e5e4] flex items-center justify-center text-[#006666] text-sm font-bold shadow-[inset_4px_4px_10px_rgba(159,154,148,0.48),inset_-4px_-4px_10px_rgba(255,255,255,0.86)]">{user?.sub?.charAt(0).toUpperCase()}</div>
-            <div><p className="text-xs font-semibold text-slate-800">{user?.sub}</p><p className="text-[10px] text-slate-500 capitalize">{user?.role}</p></div>
+  const adminItems: NavItem[] = [
+    { label: "Tài Khoản", path: "/admin/users", icon: Users },
+    { label: "Tài liệu & Chia sẻ", path: "/admin/documents", icon: FolderKanban },
+    { label: "Bảo Trì Hệ Thống", path: "/admin/system", icon: Settings },
+  ];
+
+  const handleLogout = () => {
+    logout();
+    window.location.href = "/login";
+  };
+
+  return (
+    <ShadcnSidebar>
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : ""}`}>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <Zap className="h-5 w-5" />
           </div>
-          <button onClick={() => { logout(); window.location.href = "/login"; }} className="p-2 text-slate-500 hover:text-[#ff2157] rounded-lg transition" title="Đăng xuất"><LogOut className="w-4 h-4" /></button>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold tracking-wide">RAG.Gov</p>
+              <p className="truncate text-xs text-muted-foreground">AI hành chính</p>
+            </div>
+          )}
         </div>
-      </div>
-    </div>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Cá nhân</SidebarGroupLabel>
+          <SidebarMenu>
+            {personalItems.map((item) => <NavLinkItem key={item.path} item={item} />)}
+          </SidebarMenu>
+        </SidebarGroup>
+
+        {user?.role === "manager" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Phòng ban</SidebarGroupLabel>
+            <SidebarMenu>
+              {managerItems.map((item) => <NavLinkItem key={item.path} item={item} />)}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+
+        {user?.role === "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Hệ thống</SidebarGroupLabel>
+            <SidebarMenu>
+              {adminItems.map((item) => <NavLinkItem key={item.path} item={item} />)}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarTrigger
+          className="mb-3 w-full"
+          onClick={onToggleCollapsed}
+          title={collapsed ? "Mở rộng menu" : "Thu nhỏ menu"}
+        />
+        <div className={`flex items-center gap-3 ${collapsed ? "justify-center" : "justify-between"}`}>
+          <div className={`flex min-w-0 items-center ${collapsed ? "justify-center" : "gap-2"}`}>
+            <Avatar className="h-9 w-9">
+              <AvatarFallback className="bg-primary/10 text-primary">
+                {user?.sub?.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold">{user?.sub}</p>
+                <p className="truncate text-[11px] capitalize text-muted-foreground">{user?.role}</p>
+              </div>
+            )}
+          </div>
+          {!collapsed && (
+            <Button type="button" variant="ghost" size="icon-sm" onClick={handleLogout} title="Đăng xuất">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </SidebarFooter>
+    </ShadcnSidebar>
   );
 }

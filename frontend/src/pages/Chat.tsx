@@ -2,9 +2,18 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import api, { waitForJob } from "../api";
 import {
   Send, Bot, User, Plus, Trash2, MessageSquare,
-  FolderOpen, X, Upload, RefreshCw, Pencil, Check,
+  FolderOpen, X, Upload, RefreshCw, Pencil, Check, ChevronsLeft, ChevronsRight, FileText,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
+import { useConfirmDialog } from "../components/ConfirmDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 // ──────────────────────────────────────────────────────────────────────────────
 type ChatMessage = {
@@ -70,11 +79,18 @@ export default function Chat() {
   // Rename session
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameInput, setRenameInput] = useState("");
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(() => (
+    localStorage.getItem("ragGovSessionsCollapsed") === "true"
+  ));
+  const [docsPanelCollapsed, setDocsPanelCollapsed] = useState(() => (
+    localStorage.getItem("ragGovDocsPanelCollapsed") === "true"
+  ));
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const waitingJobsRef = useRef<Set<number>>(new Set());
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -84,6 +100,12 @@ export default function Chat() {
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
+  useEffect(() => {
+    localStorage.setItem("ragGovSessionsCollapsed", String(sessionsCollapsed));
+  }, [sessionsCollapsed]);
+  useEffect(() => {
+    localStorage.setItem("ragGovDocsPanelCollapsed", String(docsPanelCollapsed));
+  }, [docsPanelCollapsed]);
 
   const fetchSessionMessages = async (sessionId: number, beforeId?: number | null): Promise<MessagePage> => {
     const params: Record<string, number> = { limit: 5 };
@@ -342,6 +364,13 @@ export default function Chat() {
 
   const handleDetach = async (docId: number) => {
     if (!activeSession) return;
+    const ok = await confirm({
+      title: "Gỡ tài liệu khỏi phiên chat?",
+      description: "Tài liệu chỉ được gỡ khỏi phiên hiện tại, không bị xóa khỏi kho.",
+      confirmText: "Gỡ tài liệu",
+      variant: "warning",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/chat/sessions/${activeSession}/attach/${docId}`);
       // Refetch attachments to ensure data is in sync
@@ -371,7 +400,12 @@ export default function Chat() {
 
   const handleDeleteSession = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    if (!confirm("Xóa phiên hội thoại này?")) return;
+    const ok = await confirm({
+      title: "Xóa phiên hội thoại này?",
+      description: "Toàn bộ tin nhắn trong phiên sẽ bị xóa.",
+      confirmText: "Xóa phiên",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/employee/sessions/${id}`);
       if (activeSession === id) { 
@@ -424,254 +458,327 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-full">
-      {/* ── Sidebar Sessions ───────────────────────────────────────────────── */}
-      <div className="w-64 bg-[#e7e5e4] border-r border-white/60 flex flex-col flex-shrink-0">
-        <div className="p-3 border-b border-white/60">
-          <button onClick={handleNewSession} className="neo-button neo-button-primary w-full">
-            <Plus className="w-4 h-4" /> Phiên hội thoại mới
-          </button>
+    <div className="flex h-full min-h-0 overflow-hidden bg-transparent">
+      {confirmDialog}
+      <aside className={cn("glass-sidebar flex shrink-0 flex-col border-r bg-card/65 transition-[width] duration-300", sessionsCollapsed ? "w-[4.5rem]" : "w-72")}>
+        <div className="space-y-2 border-b p-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size={sessionsCollapsed ? "icon" : "default"}
+            onClick={() => setSessionsCollapsed(value => !value)}
+            className="w-full"
+            title={sessionsCollapsed ? "Mở rộng phiên hội thoại" : "Thu nhỏ phiên hội thoại"}
+          >
+            {sessionsCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+            {!sessionsCollapsed && <span>Phiên chat</span>}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleNewSession}
+            size={sessionsCollapsed ? "icon" : "default"}
+            className="w-full"
+            title="Phiên hội thoại mới"
+          >
+            <Plus className="h-4 w-4" />
+            {!sessionsCollapsed && "Phiên hội thoại mới"}
+          </Button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {sessions.length === 0 && <p className="text-xs text-gray-400 text-center py-4">Chưa có phiên nào</p>}
-          {sessions.map((s: any) => (
-            <div key={s.id}
-              className={`flex items-center px-2 py-1.5 rounded-lg cursor-pointer text-sm group transition
-                ${activeSession === s.id ? "neo-inset text-[#006666]" : "hover:shadow-[inset_3px_3px_8px_rgba(159,154,148,0.34),inset_-3px_-3px_8px_rgba(255,255,255,0.75)]"}`}
-              onClick={() => loadSession(s.id)}
-            >
-              <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 mr-2 mt-0.5" />
-              {renamingId === s.id ? (
-                <div className="flex-1 flex gap-1" onClick={e => e.stopPropagation()}>
-                  <input
-                    value={renameInput} autoFocus
-                    onChange={e => setRenameInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") commitRename(s.id); if (e.key === "Escape") setRenamingId(null); }}
-                    className="neo-input flex-1 min-w-0 !py-0.5 !px-1 text-xs"
-                  />
-                  <button onClick={() => commitRename(s.id)} className="text-blue-500"><Check className="w-3 h-3" /></button>
-                </div>
-              ) : (
-                <span className="truncate flex-1 min-w-0 text-xs">{s.title}</span>
-              )}
-              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0 ml-1">
-                <button onClick={(e) => startRename(e, s)} className="p-0.5 text-gray-400 hover:text-blue-500">
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button onClick={(e) => handleDeleteSession(e, s.id)} className="p-0.5 text-gray-400 hover:text-red-500">
-                  <Trash2 className="w-3 h-3" />
-                </button>
+
+        <ScrollArea className="min-h-0 flex-1">
+          <div className={cn("space-y-1", sessionsCollapsed ? "p-3" : "p-2")}>
+            {sessions.length === 0 && !sessionsCollapsed && (
+              <p className="py-6 text-center text-xs text-muted-foreground">Chưa có phiên nào</p>
+            )}
+            {sessions.map((s: any) => (
+              <div
+                key={s.id}
+                title={sessionsCollapsed ? s.title : undefined}
+                className={cn(
+                  "group flex cursor-pointer items-center rounded-md text-sm transition-colors",
+                  sessionsCollapsed ? "justify-center px-0 py-2" : "px-2 py-1.5",
+                  activeSession === s.id ? "bg-primary/10 text-primary" : "hover:bg-muted/70",
+                )}
+                onClick={() => loadSession(s.id)}
+              >
+                <MessageSquare className={cn("h-3.5 w-3.5 shrink-0", !sessionsCollapsed && "mr-2 mt-0.5")} />
+                {!sessionsCollapsed && renamingId === s.id ? (
+                  <div className="flex flex-1 gap-1" onClick={e => e.stopPropagation()}>
+                    <Input
+                      value={renameInput}
+                      autoFocus
+                      onChange={e => setRenameInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") commitRename(s.id); if (e.key === "Escape") setRenamingId(null); }}
+                      className="h-7 min-w-0 flex-1 px-2 text-xs"
+                    />
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => commitRename(s.id)}>
+                      <Check className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : !sessionsCollapsed && (
+                  <span className="min-w-0 flex-1 truncate text-xs">{s.title}</span>
+                )}
+                {!sessionsCollapsed && (
+                  <div className="ml-1 flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={(e) => startRename(e, s)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={(e) => handleDeleteSession(e, s.id)} className="text-destructive">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </aside>
 
-      {/* ── Main Chat Area ─────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
-        <div className="p-3 border-b border-white/60 bg-[#e7e5e4]/80 flex items-center gap-3 flex-wrap">
-          {activeSession && <span className="ml-auto text-xs text-slate-500">Session #{activeSession}</span>}
-
-          {/* Hidden file input for upload */}
+      <section className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b bg-card/55 p-3 backdrop-blur-xl">
+          <div className="min-w-40 flex-1">
+            <p className="truncate text-sm font-semibold">Trợ lý AI Hành Chính</p>
+            <p className="truncate text-xs text-muted-foreground">{activeSession ? `Session #${activeSession}` : "Chọn hoặc tạo phiên để bắt đầu"}</p>
+          </div>
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleUploadForSession} />
-
-          {/* Upload mới */}
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => fileInputRef.current?.click()}
             disabled={!activeSession || uploading}
             title="Tải file mới lên session"
-            className="neo-button !min-h-0 px-3 py-1.5 text-xs text-emerald-700"
+            className="shrink-0"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="h-3.5 w-3.5" />
             {uploading ? "Đang tải..." : "Upload file"}
-          </button>
-
-          {/* Chọn từ thư viện */}
-          <button
-            onClick={showPicker ? () => setShowPicker(false) : openPicker}
+          </Button>
+          <Button
+            type="button"
+            variant={showPicker ? "default" : "outline"}
+            size="sm"
+            onClick={showPicker ? () => setShowPicker(false) : () => {
+              setDocsPanelCollapsed(false);
+              void openPicker();
+            }}
             disabled={!activeSession}
-            title="Chọn file từ thư viện"
-            className={`neo-button !min-h-0 px-3 py-1.5 text-xs disabled:opacity-50
-              ${showPicker
-                ? "neo-button-primary"
-                : "text-[#006666]"
-              }`}
+            className="shrink-0"
           >
-            <FolderOpen className="w-3.5 h-3.5" />
+            <FolderOpen className="h-3.5 w-3.5" />
             Chọn từ thư viện
-            {attachedDocs.length > 0 && (
-              <span className="ml-1 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                {attachedDocs.length}
-              </span>
-            )}
-          </button>
+            {attachedDocs.length > 0 && <Badge variant="secondary">{attachedDocs.length}</Badge>}
+          </Button>
         </div>
 
-        {/* Attached docs chips */}
-        {attachedDocs.length > 0 && (
-          <div className="px-4 py-2 bg-emerald-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-emerald-700 font-semibold flex-shrink-0">📎 Đính kèm:</span>
-            {attachedDocs.map(a => (
-              <span key={a.doc_id} className="neo-chip text-emerald-700">
-                {a.filename.length > 22 ? a.filename.slice(0, 20) + "…" : a.filename}
-                <span className="text-[10px] text-emerald-400 border-l border-emerald-100 pl-1">
-                  {sessionDocStatusLabel(a)}
-                </span>
-                <button onClick={() => handleDetach(a.doc_id)} className="text-emerald-400 hover:text-red-500 ml-0.5">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Session uploaded documents */}
-        {sessionDocs.length > 0 && (
-          <div className="px-4 py-2 bg-sky-50/50 border-b border-white/60 flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-blue-700 font-semibold flex-shrink-0">📄 File trong session:</span>
-            {sessionDocs.map((d: any) => (
-              <span key={d.id} className="neo-chip text-[#006666]">
-                {d.filename.length > 20 ? d.filename.slice(0, 18) + "…" : d.filename}
-                <span className="text-[10px] text-blue-400 border-l border-blue-100 pl-1">
-                  {sessionDocStatusLabel(d)}
-                </span>
-                <button 
-                  onClick={async () => {
-                    if (!activeSession) return;
-                    if (!confirm(`Xóa file "${d.filename}"?`)) return;
-                    try {
-                      await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
-                      // Refetch session documents to keep in sync
-                      await fetchSessionDocs(activeSession);
-                    } catch (err: any) {
-                      alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
-                    }
-                  }} 
-                  className="text-blue-400 hover:text-red-500 ml-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Body: messages or picker */}
-        <div className="flex-1 flex min-h-0">
-          {/* Messages */}
-          <div ref={messagesContainerRef} onScroll={handleMessagesScroll}
-            className={`overflow-y-auto p-6 space-y-4 bg-transparent transition-all ${showPicker ? "flex-[3]" : "flex-1"}`}>
-            {loadingOlder && <div className="text-center text-xs text-gray-400">Đang tải thêm hội thoại cũ...</div>}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div ref={messagesContainerRef} onScroll={handleMessagesScroll} className="min-w-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+            {loadingOlder && <div className="text-center text-xs text-muted-foreground">Đang tải thêm hội thoại cũ...</div>}
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                <Bot className="w-16 h-16 mb-4 opacity-20" />
-                <p className="text-lg font-medium">Trợ lý AI Hành Chính</p>
-                <p className="text-sm mt-1">Đặt câu hỏi theo tài liệu trong phiên hiện tại</p>
-                <p className="text-xs mt-3 text-gray-300">AI nhớ 3 đoạn hội thoại gần nhất • Đính kèm tài liệu bằng nút "Chọn từ thư viện"</p>
+              <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
+                <Bot className="mb-4 h-16 w-16 opacity-20" />
+                <p className="text-lg font-semibold text-foreground">Trợ lý AI Hành Chính</p>
+                <p className="mt-1 text-sm">Đặt câu hỏi theo tài liệu trong phiên hiện tại</p>
+                <p className="mt-3 text-xs">AI nhớ 3 đoạn hội thoại gần nhất và ưu tiên tài liệu đã đính kèm.</p>
               </div>
             )}
             {messages.map((m: ChatMessage) => (
-              <div key={m.id} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`flex gap-3 max-w-[78%] ${m.sender === "user" ? "flex-row-reverse" : ""}`}>
-                  <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center ${m.sender === "user" ? "bg-[#006666]" : "bg-slate-700"} text-white shadow-[6px_6px_14px_rgba(159,154,148,0.45),-6px_-6px_14px_rgba(255,255,255,0.78)]`}>
-                    {m.sender === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              <div key={m.id} className={cn("flex", m.sender === "user" ? "justify-end" : "justify-start")}>
+                <div className={cn("flex max-w-[82%] gap-3", m.sender === "user" && "flex-row-reverse")}>
+                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-sm", m.sender === "user" ? "bg-primary" : "bg-slate-700")}>
+                    {m.sender === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                   </div>
-                  <div className={`p-4 rounded-2xl ${m.sender === "user" ? "bg-[#006666] text-white rounded-tr-sm shadow-[7px_7px_16px_rgba(0,62,62,0.20),-7px_-7px_16px_rgba(255,255,255,0.55)]" : "neo-panel-compact text-gray-800 rounded-tl-sm"}`}>
-                    <p className="whitespace-pre-wrap leading-relaxed text-sm">{m.content}</p>
+                  <Card className={cn("chat-bubble", m.sender === "user" ? "chat-bubble-user rounded-tr-sm" : "chat-bubble-ai rounded-tl-sm")}>
+                    <p className="whitespace-pre-wrap">{m.content}</p>
                     {m.sender === "ai" && m.sources && (() => {
                       try {
-                        const s = JSON.parse(m.sources);
-                        if (s.length === 0) return null;
+                        const sources: unknown[] = JSON.parse(m.sources);
+                        if (sources.length === 0) return null;
                         return (
-                          <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-400">
-                            📎 Nguồn: {s.map(sourceLabel).join(", ")}
+                          <div className="mt-3 flex flex-wrap gap-1.5 border-t pt-3">
+                            {sources.map((source, index) => (
+                              <Badge key={`${String(source)}-${index}`} variant="outline" className="bg-background/60">
+                                {sourceLabel(source)}
+                              </Badge>
+                            ))}
                           </div>
                         );
                       } catch { return null; }
                     })()}
-                  </div>
+                  </Card>
                 </div>
               </div>
             ))}
             {loading && (
               <div className="flex justify-start">
-                <div className="flex gap-3">
-                  <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white"><Bot className="w-4 h-4" /></div>
-                  <div className="neo-panel-compact p-4 rounded-2xl rounded-tl-sm flex gap-1.5">
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.15s]" />
-                    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.3s]" />
+                <div className="flex max-w-md gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-white">
+                    <Bot className="h-4 w-4" />
                   </div>
+                  <Card className="chat-bubble chat-bubble-ai w-72 space-y-2 rounded-tl-sm">
+                    <Skeleton className="h-3 w-5/6" />
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </Card>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* File Picker Panel */}
-          {showPicker && (
-            <div className="flex-[2] border-l border-white/60 bg-[#e7e5e4] flex flex-col min-w-0 max-w-xs">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/60">
-                <span className="text-sm font-semibold text-gray-700">📂 Chọn tài liệu từ thư viện</span>
-                <div className="flex items-center gap-1">
-                  <button onClick={refreshTree} disabled={treeLoading} className="p-1 text-gray-400 hover:text-blue-500" title="Làm mới">
-                    <RefreshCw className={`w-3.5 h-3.5 ${treeLoading ? "animate-spin" : ""}`} />
-                  </button>
-                  <button onClick={() => setShowPicker(false)} className="p-1 text-gray-400 hover:text-red-500">
-                    <X className="w-4 h-4" />
-                  </button>
+          {docsPanelCollapsed ? (
+            <aside className="hidden w-14 shrink-0 flex-col items-center border-l bg-card/55 py-3 backdrop-blur-xl xl:flex">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setDocsPanelCollapsed(false)}
+                title="Mở panel tài liệu"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </aside>
+          ) : (
+          <aside className={cn(
+            "hidden shrink-0 flex-col border-l bg-card/55 backdrop-blur-xl transition-[width] duration-200 xl:flex",
+            showPicker ? "w-[30rem] max-w-[42vw]" : "w-80",
+          )}>
+            <div className="border-b p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Tài liệu phiên</p>
+                  <p className="text-xs text-muted-foreground">Nguồn sẽ được ưu tiên khi trả lời</p>
                 </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-3">
-                {treeLoading && (
-                  <div className="flex items-center justify-center h-32 text-gray-400 text-sm gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin" /> Đang tải...
-                  </div>
-                )}
-                {!treeLoading && treeData && (
-                  <FolderTree
-                    data={treeData}
-                    attachedIds={attachedIds}
-                    onAttach={handleAttach}
-                    onDownload={(id) => window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank")}
-                  />
-                )}
-                {!treeLoading && !treeData && (
-                  <p className="text-center text-sm text-gray-400 py-8">Không thể tải dữ liệu</p>
-                )}
-              </div>
-
-              <div className="p-3 border-t border-white/60 text-xs text-slate-500">
-                Nhấn 📎 trên tài liệu để đính kèm vào phiên chat hiện tại.
-                AI sẽ sử dụng nội dung các file đính kèm khi trả lời.
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setDocsPanelCollapsed(true)}
+                  title="Thu gọn panel tài liệu"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
               </div>
             </div>
+
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-4 p-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Đính kèm</p>
+                  {attachedDocs.length === 0 && <p className="text-xs text-muted-foreground">Chưa có tài liệu đính kèm.</p>}
+                  {attachedDocs.map(a => (
+                    <div key={a.doc_id} className="soft-panel flex items-center gap-2 p-2">
+                      <FileText className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">{a.filename}</p>
+                        <p className="text-[11px] text-muted-foreground">{sessionDocStatusLabel(a)}</p>
+                      </div>
+                      <Button type="button" variant="ghost" size="icon-sm" onClick={() => handleDetach(a.doc_id)} className="text-destructive">
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Upload trong session</p>
+                  {sessionDocs.length === 0 && <p className="text-xs text-muted-foreground">Chưa có file upload riêng.</p>}
+                  {sessionDocs.map((d: any) => (
+                    <div key={d.id} className="soft-panel flex items-center gap-2 p-2">
+                      <FileText className="h-4 w-4 shrink-0 text-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">{d.filename}</p>
+                        <p className="text-[11px] text-muted-foreground">{sessionDocStatusLabel(d)}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-destructive"
+                        onClick={async () => {
+                          if (!activeSession) return;
+                          const ok = await confirm({
+                            title: `Xóa file "${d.filename}"?`,
+                            description: "File upload trong phiên chat này sẽ bị xóa.",
+                            confirmText: "Xóa file",
+                          });
+                          if (!ok) return;
+                          try {
+                            await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
+                            await fetchSessionDocs(activeSession);
+                          } catch (err: any) {
+                            alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
+                          }
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {showPicker && (
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Thư viện</p>
+                      <div className="flex items-center gap-1">
+                      <Button type="button" variant="ghost" size="icon-sm" onClick={refreshTree} disabled={treeLoading} title="Làm mới">
+                        <RefreshCw className={cn("h-3.5 w-3.5", treeLoading && "animate-spin")} />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-sm" onClick={() => setShowPicker(false)} title="Đóng thư viện">
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                      </div>
+                    </div>
+                    {treeLoading && (
+                      <div className="space-y-2">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-10 w-5/6" />
+                      </div>
+                    )}
+                    {!treeLoading && treeData && (
+                      <FolderTree
+                        data={treeData}
+                        attachedIds={attachedIds}
+                        onAttach={handleAttach}
+                        onDownload={(id) => window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank")}
+                      />
+                    )}
+                    {!treeLoading && !treeData && (
+                      <p className="py-8 text-center text-sm text-muted-foreground">Không thể tải dữ liệu</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </aside>
           )}
         </div>
 
-        {/* Input */}
-        <div className="p-4 bg-[#e7e5e4]/90 border-t border-white/60">
-          <div className="flex gap-2">
-            <input
+        <div className="border-t bg-card/70 p-4 backdrop-blur-xl">
+          <div className="flex w-full items-end gap-2">
+            <Textarea
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value);
+                e.currentTarget.style.height = "auto";
+                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 180)}px`;
+              }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              className="neo-input flex-1 px-4 py-3"
+              className="max-h-44 min-h-12 resize-none rounded-2xl bg-background/80 px-4 py-3"
               placeholder="Nhập câu hỏi về văn bản hành chính..."
               disabled={loading}
+              rows={1}
             />
-            <button onClick={handleSend} disabled={!input.trim() || loading}
-              className="neo-button neo-button-primary px-5 py-3">
-              <Send className="w-5 h-5" />
-            </button>
+            <Button type="button" onClick={handleSend} disabled={!input.trim() || loading} size="icon" className="h-12 w-12 rounded-2xl">
+              <Send className="h-5 w-5" />
+            </Button>
           </div>
-          <p className="text-center text-[10px] text-gray-300 mt-2">
-            AI nhớ 3 đoạn hội thoại gần nhất trong phiên • Ưu tiên tài liệu đã upload hoặc đính kèm trong session
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            AI nhớ 3 đoạn hội thoại gần nhất trong phiên và ưu tiên tài liệu đã upload hoặc đính kèm.
           </p>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

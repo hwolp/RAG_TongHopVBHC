@@ -63,6 +63,7 @@ def accessible_attachment_ids(db: Session, user_model: models.User, session_id: 
     return [
         doc.id
         for doc in _accessible_attached_documents(db, user_model, session_id)
+        if doc.is_indexed
     ]
 
 
@@ -87,7 +88,7 @@ def _accessible_attached_documents(db: Session, user_model: models.User, session
     documents = []
     attachments = chat.list_attachments(session_id)
     for attachment in attachments:
-        doc = documents_repo.get(attachment.doc_id)
+        doc = documents_repo.get_active(attachment.doc_id)
         if can_access_document(db, user_model, doc):
             documents.append(doc)
     return documents

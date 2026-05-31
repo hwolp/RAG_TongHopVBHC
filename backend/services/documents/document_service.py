@@ -59,7 +59,7 @@ class DocumentIndexCoordinator:
         job = self.jobs.latest_for_document(doc.id, job_service.JOB_TYPE_INDEX_DOCUMENT)
         if job and job.status in {"queued", "running", "failed"}:
             return job.status
-        return "not_    indexed"
+        return "not_indexed"
 
     def queue_department_index(self, manager_user_id: int, doc_id: int) -> dict:
         manager = UserRepository(self.db).get(manager_user_id)

@@ -5,6 +5,13 @@ import {
   LayoutGrid, List, RefreshCw,
 } from "lucide-react";
 import FolderTree, { type FolderTreeData } from "../components/FolderTree";
+import { useConfirmDialog } from "../components/ConfirmDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 
 type Doc = {
   id: number;
@@ -29,6 +36,7 @@ export default function Library() {
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const fetchDocs = async () => {
     try {
@@ -74,13 +82,6 @@ export default function Library() {
 
   const indexBadge = (doc: Doc) => {
     const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
-    const styles: Record<string, string> = {
-      indexed: "bg-green-100 text-green-700",
-      queued: "bg-amber-100 text-amber-700",
-      running: "bg-blue-100 text-blue-700",
-      failed: "bg-red-100 text-red-700",
-      not_indexed: "bg-gray-100 text-gray-500",
-    };
     const labels: Record<string, string> = {
       indexed: "Đã index",
       queued: "Chờ index",
@@ -88,11 +89,8 @@ export default function Library() {
       failed: "Index lỗi",
       not_indexed: "Chưa index",
     };
-    return (
-      <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>
-        {labels[status] || labels.not_indexed}
-      </span>
-    );
+    const variant = status === "indexed" ? "success" : status === "queued" || status === "running" ? "warning" : status === "failed" ? "destructive" : "secondary";
+    return <Badge variant={variant}>{labels[status] || labels.not_indexed}</Badge>;
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,7 +115,12 @@ export default function Library() {
   };
 
   const handleDelete = async (id: number, _scope?: string) => {
-    if (!confirm("Xóa tài liệu này?")) return;
+    const ok = await confirm({
+      title: "Xóa tài liệu này?",
+      description: "Tài liệu sẽ bị xóa khỏi kho cá nhân.",
+      confirmText: "Xóa tài liệu",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/employee/documents/${id}`);
       fetchDocs();
@@ -130,59 +133,69 @@ export default function Library() {
   };
 
   return (
-    <div className="neo-page max-w-6xl">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="app-page max-w-6xl">
+      {confirmDialog}
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Kho Tài Liệu Cá Nhân</h1>
-          <p className="text-slate-500 text-sm mt-1">Tải lên, quản lý và tìm kiếm tài liệu của bạn</p>
+          <h1 className="text-2xl font-bold">Kho Tài Liệu Cá Nhân</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Tải lên, quản lý và tìm kiếm tài liệu của bạn</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <button onClick={() => setViewMode("grid")}
-            className={`neo-icon-button ${viewMode === "grid" ? "text-white !bg-[#006666]" : "text-slate-500"}`}
+          <Button type="button" variant={viewMode === "grid" ? "default" : "outline"} size="icon"
+            onClick={() => setViewMode("grid")}
             title="Xem dạng lưới">
             <LayoutGrid className="w-4 h-4" />
-          </button>
-          <button onClick={switchToTree}
-            className={`neo-icon-button ${viewMode === "tree" ? "text-white !bg-[#006666]" : "text-slate-500"}`}
+          </Button>
+          <Button type="button" variant={viewMode === "tree" ? "default" : "outline"} size="icon"
+            onClick={switchToTree}
             title="Xem dạng cây thư mục">
             <List className="w-4 h-4" />
-          </button>
+          </Button>
 
-          {/* Upload */}
-          <label className="neo-button neo-button-primary cursor-pointer">
-            <Upload className="w-4 h-4" />
-            {uploading ? "Đang tải..." : "Tải lên"}
-            <input type="file" className="hidden" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} />
-          </label>
+          <Dialog>
+            <DialogTrigger>
+              <Button type="button">
+                <Upload className="w-4 h-4" />
+                Tải lên
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Tải lên tài liệu</DialogTitle>
+                <DialogDescription>Chọn file PDF, Word hoặc TXT để thêm vào kho cá nhân.</DialogDescription>
+              </DialogHeader>
+              <label className="soft-panel flex cursor-pointer items-center justify-between gap-3 p-4 text-sm">
+                <span className="text-muted-foreground">Chọn file từ máy tính</span>
+                <span className="font-medium text-primary">Browse</span>
+                <input type="file" className="hidden" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} />
+              </label>
+              {uploading && <Progress value={65} className="mt-1" />}
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
-      {/* Search (grid mode only) */}
       {jobMessage && (
-        <div className="neo-panel-compact px-4 py-3 text-sm text-[#006666]">
+        <Card className="glass-panel px-4 py-3 text-sm text-primary">
           {jobMessage}
-        </div>
+        </Card>
       )}
 
-      {/* Search (grid mode only) */}
       {viewMode === "grid" && (
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-            <input
+            <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && fetchDocs()}
-              className="neo-input pl-10 pr-4"
+              className="pl-10"
               placeholder="Tìm kiếm tài liệu..."
             />
           </div>
-          <button onClick={fetchDocs}
-            className="neo-button">
+          <Button type="button" variant="outline" onClick={fetchDocs}>
             Tìm
-          </button>
+          </Button>
         </div>
       )}
 
@@ -191,26 +204,30 @@ export default function Library() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {docs.map((d) => (
-              <div key={d.id} className="neo-panel p-5 transition group hover:-translate-y-0.5">
+              <Card key={d.id} className="glass-panel group transition hover:-translate-y-0.5">
+                <CardHeader className="pb-3">
                 <div className="flex items-start justify-between mb-3">
-                  <div className="neo-stat-icon">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10">
                     <FileText className="w-6 h-6 text-[#006666]" />
                   </div>
                   {indexBadge(d)}
                 </div>
-                <h3 className="font-medium text-gray-900 truncate mb-1" title={d.filename}>{d.filename}</h3>
-                <p className="text-xs text-gray-400 mb-4">{d.uploaded_at?.slice(0, 10)}</p>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                  <button onClick={() => handleDownload(d.id)}
-                    className="neo-button flex-1 !min-h-0 py-1.5 text-xs text-[#006666]">
+                  <CardTitle className="truncate text-base" title={d.filename}>{d.filename}</CardTitle>
+                  <CardDescription>{d.uploaded_at?.slice(0, 10)}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                <div className="flex gap-2 opacity-0 transition group-hover:opacity-100">
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleDownload(d.id)}
+                    className="flex-1">
                     <Download className="w-3.5 h-3.5" /> Tải xuống
-                  </button>
-                  <button onClick={() => handleDelete(d.id)}
-                    className="neo-icon-button !h-8 !w-8 text-red-500">
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => handleDelete(d.id)}
+                    className="text-destructive">
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                 </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
           {docs.length === 0 && (
@@ -224,14 +241,13 @@ export default function Library() {
 
       {/* Tree View */}
       {viewMode === "tree" && (
-        <div className="neo-panel p-4">
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-700">Cây thư mục tài liệu</h2>
-            <button onClick={fetchTree} disabled={treeLoading}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <h2 className="text-sm font-semibold">Cây thư mục tài liệu</h2>
+            <Button type="button" variant="ghost" size="sm" onClick={fetchTree} disabled={treeLoading}>
               <RefreshCw className={`w-3.5 h-3.5 ${treeLoading ? "animate-spin" : ""}`} />
               Làm mới
-            </button>
+            </Button>
           </div>
 
           {treeLoading && (
@@ -255,7 +271,7 @@ export default function Library() {
           {!treeLoading && !treeData && (
             <p className="text-center py-8 text-gray-400 text-sm">Không thể tải dữ liệu</p>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

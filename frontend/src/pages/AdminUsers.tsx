@@ -15,6 +15,13 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Role = "admin" | "manager" | "employee";
 
@@ -82,6 +89,7 @@ export default function AdminUsers() {
   const [form, setForm] = useState<UserForm>(emptyForm);
   const [departmentName, setDepartmentName] = useState("");
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const departmentNameMap = useMemo(
     () => new Map(departments.map((department) => [department.id, department.name])),
@@ -209,7 +217,12 @@ export default function AdminUsers() {
   };
 
   const deleteUser = async (user: UserRecord) => {
-    if (!window.confirm(`Xóa tài khoản "${user.username}"?`)) return;
+    const ok = await confirm({
+      title: `Xóa tài khoản "${user.username}"?`,
+      description: "Tài khoản sẽ bị xóa khỏi hệ thống.",
+      confirmText: "Xóa tài khoản",
+    });
+    if (!ok) return;
     setError("");
     try {
       await api.delete(`/admin/users/${user.id}`);
@@ -255,7 +268,12 @@ export default function AdminUsers() {
   };
 
   const deleteDepartment = async (department: Department) => {
-    if (!window.confirm(`Xóa phòng ban "${department.name}"?`)) return;
+    const ok = await confirm({
+      title: `Xóa phòng ban "${department.name}"?`,
+      description: "Phòng ban sẽ bị xóa khỏi hệ thống nếu backend cho phép.",
+      confirmText: "Xóa phòng ban",
+    });
+    if (!ok) return;
     setError("");
     try {
       await api.delete(`/admin/departments/${department.id}`);
@@ -278,27 +296,29 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="app-page">
+      {confirmDialog}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý tài khoản</h1>
-          <p className="text-sm text-gray-500 mt-1">Tài khoản, vai trò và phòng ban trong hệ thống.</p>
+          <h1 className="text-2xl font-bold">Quản lý tài khoản</h1>
+          <p className="text-sm text-muted-foreground mt-1">Tài khoản, vai trò và phòng ban trong hệ thống.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => void refreshAll()}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white text-sm text-gray-700 hover:border-blue-300"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             Làm mới
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
             onClick={openCreateUser}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
           >
             <Plus className="w-4 h-4" />
             Thêm tài khoản
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -312,43 +332,43 @@ export default function AdminUsers() {
       )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <div className="rounded-lg border bg-white p-4">
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Tài khoản</p>
             <Users className="w-4 h-4 text-blue-500" />
           </div>
           <p className="mt-2 text-2xl font-bold text-gray-900">{stats.total}</p>
-        </div>
-        <div className="rounded-lg border bg-white p-4">
+        </Card>
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Hoạt động</p>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="mt-2 text-2xl font-bold text-emerald-600">{stats.active}</p>
-        </div>
-        <div className="rounded-lg border bg-white p-4">
+        </Card>
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Bị khóa</p>
             <Lock className="w-4 h-4 text-red-500" />
           </div>
           <p className="mt-2 text-2xl font-bold text-red-600">{stats.locked}</p>
-        </div>
-        <div className="rounded-lg border bg-white p-4">
+        </Card>
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Phòng ban</p>
             <Building2 className="w-4 h-4 text-amber-500" />
           </div>
           <p className="mt-2 text-2xl font-bold text-amber-600">{stats.departments}</p>
-        </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-start">
-        <section className="rounded-lg border bg-white overflow-hidden">
+        <Card className="glass-panel overflow-hidden">
           <div className="p-4 border-b space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-gray-900">Danh sách tài khoản</h2>
-                <p className="text-sm text-gray-500 mt-1">{filteredUsers.length} tài khoản đang hiển thị</p>
+                <h2 className="font-semibold">Danh sách tài khoản</h2>
+                <p className="text-sm text-muted-foreground mt-1">{filteredUsers.length} tài khoản đang hiển thị</p>
               </div>
               <div className="flex rounded-lg border overflow-hidden text-sm">
                 {[
@@ -371,38 +391,39 @@ export default function AdminUsers() {
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                <input
+                <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   onKeyDown={(event) => event.key === "Enter" && void runSearch()}
-                  className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="pl-10"
                   placeholder="Tìm username hoặc họ tên..."
                 />
               </div>
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => void runSearch()}
-                className="px-4 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
               >
                 Tìm
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="divide-y">
-            <div className="hidden lg:grid grid-cols-[minmax(220px,1.4fr)_140px_150px_120px_120px] gap-3 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-600">
-              <span>Người dùng</span>
-              <span>Vai trò</span>
-              <span>Phòng ban</span>
-              <span>Trạng thái</span>
-              <span className="text-right">Hành động</span>
-            </div>
-
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Người dùng</TableHead>
+                <TableHead>Vai trò</TableHead>
+                <TableHead>Phòng ban</TableHead>
+                <TableHead>Trạng thái</TableHead>
+                <TableHead className="text-right">Hành động</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
             {filteredUsers.map((user) => (
-              <div
-                key={user.id}
-                className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1.4fr)_140px_150px_120px_120px] gap-3 px-4 py-4 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-3 min-w-0">
+              <TableRow key={user.id}>
+                <TableCell>
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-semibold flex-shrink-0">
                     {user.username.charAt(0).toUpperCase()}
                   </div>
@@ -411,21 +432,25 @@ export default function AdminUsers() {
                     <p className="text-xs text-gray-500 truncate">@{user.username} · ID {user.id}</p>
                   </div>
                 </div>
+                </TableCell>
 
-                <div className="flex items-center">
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-medium ${roleStyles[user.role]}`}>
+                <TableCell>
+                  <Badge variant="outline" className={roleStyles[user.role]}>
                     <ShieldCheck className="w-3.5 h-3.5" />
                     {roleLabels[user.role]}
-                  </span>
-                </div>
+                  </Badge>
+                </TableCell>
 
-                <div className="flex items-center text-sm text-gray-600">
+                <TableCell className="text-muted-foreground">
+                <div className="flex items-center text-sm">
                   <Building2 className="w-4 h-4 mr-1.5 text-gray-400 lg:hidden" />
                   <span className="truncate">
                     {user.department_id ? departmentNameMap.get(user.department_id) || `#${user.department_id}` : "Chưa gán"}
                   </span>
                 </div>
+                </TableCell>
 
+                <TableCell>
                 <div className="flex items-center text-sm">
                   {user.is_locked ? (
                     <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
@@ -439,33 +464,44 @@ export default function AdminUsers() {
                     </span>
                   )}
                 </div>
+                </TableCell>
 
-                <div className="flex lg:justify-end gap-1">
-                  <button
+                <TableCell>
+                <div className="flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => openEditUser(user)}
-                    className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50"
                     title="Sửa tài khoản"
                   >
                     <PencilLine className="w-4 h-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => void toggleLock(user)}
-                    className="p-2 rounded-lg text-gray-500 hover:text-amber-600 hover:bg-amber-50"
                     title={user.is_locked ? "Mở khóa" : "Khóa"}
                   >
                     {user.is_locked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => void deleteUser(user)}
-                    className="p-2 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50"
+                    className="text-destructive"
                     title="Xóa"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
-              </div>
+                </TableCell>
+              </TableRow>
             ))}
-          </div>
+            </TableBody>
+          </Table>
 
           {filteredUsers.length === 0 && (
             <div className="py-14 text-center text-gray-400">
@@ -473,7 +509,7 @@ export default function AdminUsers() {
               <p>Không có tài khoản phù hợp.</p>
             </div>
           )}
-        </section>
+        </Card>
 
         <aside className="rounded-lg border bg-white overflow-hidden">
           <div className="p-4 border-b flex items-start justify-between gap-3">
@@ -551,36 +587,28 @@ export default function AdminUsers() {
         </aside>
       </div>
 
-      {showUserModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg shadow-2xl">
-            <div className="flex items-start justify-between gap-3 p-5 border-b">
-              <div>
-                <h3 className="font-bold text-lg text-gray-900">{editingUser ? "Chỉnh sửa tài khoản" : "Thêm tài khoản"}</h3>
-                <p className="text-sm text-gray-500 mt-1">{editingUser ? `@${editingUser.username}` : "Tạo tài khoản đăng nhập mới."}</p>
-              </div>
-              <button onClick={() => setShowUserModal(false)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingUser ? "Chỉnh sửa tài khoản" : "Thêm tài khoản"}</DialogTitle>
+            <DialogDescription>{editingUser ? `@${editingUser.username}` : "Tạo tài khoản đăng nhập mới."}</DialogDescription>
+          </DialogHeader>
 
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="space-y-1.5">
                   <span className="text-xs font-medium text-gray-500">Tên đăng nhập</span>
-                  <input
+                  <Input
                     value={form.username}
                     disabled={Boolean(editingUser)}
                     onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2.5 text-sm disabled:bg-gray-100"
                   />
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-xs font-medium text-gray-500">Họ tên</span>
-                  <input
+                  <Input
                     value={form.full_name}
                     onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2.5 text-sm"
                   />
                 </label>
               </div>
@@ -618,10 +646,9 @@ export default function AdminUsers() {
               {editingUser ? (
                 <label className="space-y-1.5 block">
                   <span className="text-xs font-medium text-gray-500">Mật khẩu mới</span>
-                  <input
+                  <Input
                     value={form.password}
                     onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2.5 text-sm"
                     type="password"
                     placeholder="Để trống nếu không đổi"
                     autoComplete="new-password"
@@ -630,32 +657,30 @@ export default function AdminUsers() {
               ) : (
                 <label className="space-y-1.5 block">
                   <span className="text-xs font-medium text-gray-500">Mật khẩu ban đầu</span>
-                  <input
+                  <Input
                     value={form.password}
                     onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2.5 text-sm"
                     type="text"
                   />
                 </label>
               )}
             </div>
 
-            <div className="p-5 border-t flex justify-end gap-2">
-              <button onClick={() => setShowUserModal(false)} className="px-4 py-2.5 rounded-lg border text-sm text-gray-600 hover:bg-gray-50">
+            <div className="flex justify-end gap-2 border-t p-5">
+              <Button type="button" variant="outline" onClick={() => setShowUserModal(false)}>
                 Hủy
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
                 onClick={() => void saveUser()}
                 disabled={savingUser}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
               >
                 {editingUser ? <PencilLine className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                 {savingUser ? "Đang lưu..." : editingUser ? "Lưu thay đổi" : "Tạo tài khoản"}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

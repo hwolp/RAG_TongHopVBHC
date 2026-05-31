@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import api, { waitForJob } from "../api";
 import { Database, RefreshCw, Trash2 } from "lucide-react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 
 export default function AdminSystem() {
   const [vectorStatus, setVectorStatus] = useState<any>(null);
@@ -9,6 +10,7 @@ export default function AdminSystem() {
   const [tags, setTags] = useState<any[]>([]);
   const [newTag, setNewTag] = useState("");
   const [jobMessage, setJobMessage] = useState("");
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const fetchStatus = async () => { try { const r = await api.get("/admin/vector/status"); setVectorStatus(r.data); } catch {} };
   const fetchProposals = async () => { const r = await api.get("/admin/sqp/proposals"); setProposals(r.data); };
@@ -18,9 +20,11 @@ export default function AdminSystem() {
 
   const handleReindex = async () => { setLoading(true); await api.post("/admin/vector/reindex"); await fetchStatus(); setLoading(false); };
   const handleClear = async () => {
-    const ok = confirm(
-      "XÓA COLLECTION sẽ xóa toàn bộ vector index, tài liệu đã upload, hội thoại, tin nhắn chat và job nền. Thao tác này không thể hoàn tác. Tiếp tục?"
-    );
+    const ok = await confirm({
+      title: "Xóa Collection?",
+      description: "Thao tác này sẽ xóa toàn bộ vector index, tài liệu đã upload, hội thoại, tin nhắn chat và job nền. Không thể hoàn tác.",
+      confirmText: "Xóa Collection",
+    });
     if (!ok) return;
     setLoading(true);
     try {
@@ -56,12 +60,22 @@ export default function AdminSystem() {
   };
   const handleReject = async (id: number) => { await api.post(`/admin/sqp/reject/${id}`); fetchProposals(); };
   const handleAddTag = async () => { if (!newTag) return; await api.post(`/admin/tags?name=${newTag}`); setNewTag(""); fetchTags(); };
-  const handleDeleteTag = async (id: number) => { await api.delete(`/admin/tags/${id}`); fetchTags(); };
+  const handleDeleteTag = async (id: number) => {
+    const ok = await confirm({
+      title: "Xóa thẻ này?",
+      description: "Thẻ sẽ bị xóa khỏi hệ thống.",
+      confirmText: "Xóa thẻ",
+    });
+    if (!ok) return;
+    await api.delete(`/admin/tags/${id}`);
+    fetchTags();
+  };
 
   const statusColors: any = { pending: "bg-yellow-100 text-yellow-700", approved: "bg-green-100 text-green-700", rejected: "bg-red-100 text-red-700" };
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
+      {confirmDialog}
       <h1 className="text-2xl font-bold text-gray-900">Bảo Trì & Cấu Hình Hệ Thống</h1>
 
       {/* Vector DB Status */}
