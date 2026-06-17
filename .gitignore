@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+uploads/
+backend/database/chromadb_storage/
