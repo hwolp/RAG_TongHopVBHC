@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import api, { waitForJob } from "../api";
 import { FileText, RefreshCw, Search, Share2, Trash2, Upload, PencilLine } from "lucide-react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
+import TagSelector, { TagList, appendTagIds, type DocumentTag } from "../components/TagSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +24,7 @@ type DepartmentDocument = {
   department_id: number | null;
   is_indexed?: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -61,7 +63,9 @@ export default function AdminDocuments() {
   const [loading, setLoading] = useState(false);
   const [editingDoc, setEditingDoc] = useState<DepartmentDocument | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ filename: "", department_id: "" });
+  const [editTagIds, setEditTagIds] = useState<number[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [jobMessage, setJobMessage] = useState("");
   const { confirm, confirmDialog } = useConfirmDialog();
 
@@ -135,10 +139,12 @@ export default function AdminDocuments() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      appendTagIds(formData, selectedTagIds);
       const response = await api.post("/admin/documents/department/upload", formData, {
         params: { department_id: Number(selectedDepartmentId) },
       });
       setSelectedFile(null);
+      setSelectedTagIds([]);
       await refreshAll();
       if (response.data.job_id) {
         void waitIndexJob(response.data.job_id);
@@ -169,6 +175,7 @@ export default function AdminDocuments() {
       filename: doc.filename,
       department_id: doc.department_id ? String(doc.department_id) : "",
     });
+    setEditTagIds((doc.tags ?? []).map((tag) => tag.id));
   };
 
   const handleSaveEdit = async () => {
@@ -178,6 +185,7 @@ export default function AdminDocuments() {
       await api.put(`/admin/documents/department/${editingDoc.id}`, {
         filename: editForm.filename || null,
         department_id: editForm.department_id ? Number(editForm.department_id) : null,
+        tag_ids: editTagIds,
       });
       setEditingDoc(null);
       await refreshAll();
@@ -261,6 +269,7 @@ export default function AdminDocuments() {
               />
             </label>
           </div>
+          <TagSelector value={selectedTagIds} onChange={setSelectedTagIds} />
           <Button
             type="button"
             onClick={() => void handleUpload()}
@@ -325,6 +334,7 @@ export default function AdminDocuments() {
                       {document.filename}
                     </span>
                   </div>
+                  <TagList tags={document.tags} showEmpty className="mt-2" />
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {document.department_id ? departmentNameMap.get(document.department_id) ?? `#${document.department_id}` : "—"}
@@ -435,6 +445,7 @@ export default function AdminDocuments() {
                 </option>
               ))}
             </select>
+            <TagSelector value={editTagIds} onChange={setEditTagIds} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setEditingDoc(null)}>
                 Hủy

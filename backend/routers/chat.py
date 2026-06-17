@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -47,10 +47,11 @@ def ask_ai(payload: ChatRequest, db: Session = Depends(get_db), user: dict = Dep
 async def upload_session_document(
     session_id: int,
     file: UploadFile = File(...),
+    tag_ids: list[int] | None = Form(None),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    return await document_service.upload_session_personal_document(db, user["id"], session_id, file)
+    return await document_service.upload_session_personal_document(db, user["id"], session_id, file, tag_ids)
 
 
 # ── Folder Tree ────────────────────────────────────────────────────────────────
@@ -197,10 +198,11 @@ def legacy_chat(payload: ChatRequest, db: Session = Depends(get_db), user: dict 
 async def legacy_upload_session_document(
     session_id: int,
     file: UploadFile = File(...),
+    tag_ids: list[int] | None = Form(None),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    return await upload_session_document(session_id, file, db, user)
+    return await upload_session_document(session_id, file, tag_ids, db, user)
 
 
 @router.post("/employee/sessions")

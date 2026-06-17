@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import api, { waitForJob } from "../api";
 import {
   FileText, Upload, Trash2, Download, Search,
-  LayoutGrid, List, RefreshCw,
+  LayoutGrid, List, RefreshCw, PencilLine,
 } from "lucide-react";
 import FolderTree, { type FolderTreeData } from "../components/FolderTree";
 import { useConfirmDialog } from "../components/ConfirmDialog";
+import TagSelector, { TagList, appendTagIds, type DocumentTag } from "../components/TagSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ type Doc = {
   is_indexed: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
   uploaded_at: string;
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -36,6 +38,11 @@ export default function Library() {
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [editingDoc, setEditingDoc] = useState<Doc | null>(null);
+  const [editFilename, setEditFilename] = useState("");
+  const [editTagIds, setEditTagIds] = useState<number[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
   const { confirm, confirmDialog } = useConfirmDialog();
 
   const fetchDocs = async () => {
@@ -99,8 +106,10 @@ export default function Library() {
     setUploading(true);
     const fd = new FormData();
     fd.append("file", e.target.files[0]);
+    appendTagIds(fd, selectedTagIds);
     try {
       const r = await api.post("/employee/documents/upload", fd);
+      setSelectedTagIds([]);
       await fetchDocs();
       if (viewMode === "tree") fetchTree();
       if (r.data.job_id) {
@@ -132,9 +141,56 @@ export default function Library() {
     window.open(`http://localhost:8000/employee/documents/${id}/download`, "_blank");
   };
 
+  const openEdit = (doc: Doc) => {
+    setEditingDoc(doc);
+    setEditFilename(doc.filename);
+    setEditTagIds((doc.tags ?? []).map((tag) => tag.id));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingDoc) return;
+    setSavingEdit(true);
+    try {
+      const response = await api.put(`/employee/documents/${editingDoc.id}`, {
+        filename: editFilename,
+        tag_ids: editTagIds,
+      });
+      setEditingDoc(null);
+      await fetchDocs();
+      if (viewMode === "tree") await fetchTree();
+      if (response.data.job_id) {
+        void waitIndexJob(response.data.job_id);
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <div className="app-page max-w-6xl">
       {confirmDialog}
+      <Dialog open={Boolean(editingDoc)} onOpenChange={(open) => !open && setEditingDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa tài liệu cá nhân</DialogTitle>
+            <DialogDescription>Đổi tên file và cập nhật tag cho tài liệu.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={editFilename}
+            onChange={(event) => setEditFilename(event.target.value)}
+            placeholder="Tên file"
+          />
+          <TagSelector value={editTagIds} onChange={setEditTagIds} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setEditingDoc(null)}>
+              Hủy
+            </Button>
+            <Button type="button" onClick={() => void handleSaveEdit()} disabled={savingEdit}>
+              {savingEdit ? "Đang lưu..." : "Lưu thay đổi"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Kho Tài Liệu Cá Nhân</h1>
@@ -169,6 +225,7 @@ export default function Library() {
                 <span className="font-medium text-primary">Browse</span>
                 <input type="file" className="hidden" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} />
               </label>
+              <TagSelector value={selectedTagIds} onChange={setSelectedTagIds} />
               {uploading && <Progress value={65} className="mt-1" />}
             </DialogContent>
           </Dialog>
@@ -214,12 +271,17 @@ export default function Library() {
                 </div>
                   <CardTitle className="truncate text-base" title={d.filename}>{d.filename}</CardTitle>
                   <CardDescription>{d.uploaded_at?.slice(0, 10)}</CardDescription>
+                  <TagList tags={d.tags} showEmpty className="pt-1" />
                 </CardHeader>
                 <CardContent>
                 <div className="flex gap-2 opacity-0 transition group-hover:opacity-100">
                   <Button type="button" variant="outline" size="sm" onClick={() => handleDownload(d.id)}
                     className="flex-1">
                     <Download className="w-3.5 h-3.5" /> Tải xuống
+                  </Button>
+                  <Button type="button" variant="outline" size="icon-sm" onClick={() => openEdit(d)}
+                    title="Sửa tên và tag">
+                    <PencilLine className="w-3.5 h-3.5" />
                   </Button>
                   <Button type="button" variant="ghost" size="icon-sm" onClick={() => handleDelete(d.id)}
                     className="text-destructive">

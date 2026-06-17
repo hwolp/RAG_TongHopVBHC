@@ -18,7 +18,7 @@ NGUYÊN TẮC:
 4. Nếu ngữ cảnh có nội dung liên quan, hãy trả lời trực tiếp, ngắn gọn và có thể tổng hợp các ý chính.
 5. Khi có nhãn nguồn trong ngữ cảnh như [Điều 1], [Điều 2], hãy trích dẫn nhãn đó ở cuối ý liên quan.
 6. Chỉ trả lời "Tôi không tìm thấy thông tin này trong văn bản đã nạp." khi ngữ cảnh không có nội dung liên quan đến câu hỏi.
-7. Không lặp lại cùng một câu trả lời nhiều lần.
+7. Không lặp lại các ý trong cùng một câu trả lời nhiều lần.
 
 TRẢ LỜI:"""
 

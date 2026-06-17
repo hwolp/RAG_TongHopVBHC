@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/admin", tags=["Quản trị hệ thống"])
 class UpdateDepartmentDocumentRequest(BaseModel):
     filename: str | None = None
     department_id: int | None = None
+    tag_ids: list[int] | None = None
 
 
 class ShareByUsernameRequest(BaseModel):
@@ -139,10 +140,11 @@ def list_all_department_documents(
 async def upload_department_document(
     department_id: int,
     file: UploadFile = File(...),
+    tag_ids: list[int] | None = Form(None),
     db: Session = Depends(get_db),
     admin_user: dict = Depends(require_admin),
 ):
-    return await document_service.upload_department_document_for_admin(db, admin_user["id"], department_id, file)
+    return await document_service.upload_department_document_for_admin(db, admin_user["id"], department_id, file, tag_ids)
 
 
 @router.put("/documents/department/{doc_id}")
@@ -158,6 +160,7 @@ def update_department_document(
         doc_id=doc_id,
         filename=payload.filename,
         department_id=payload.department_id,
+        tag_ids=payload.tag_ids,
     )
 
 

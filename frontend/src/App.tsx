@@ -12,6 +12,7 @@ import ManagerDocs from './pages/ManagerDocs';
 import SQPBrowser from './pages/SQPBrowser';
 import { useAuth } from './hooks/useAuth';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { ToastProvider } from '@/components/ui/toast';
 
 const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
   const { user, loading } = useAuth();
@@ -47,24 +48,26 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+    <ToastProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        {/* Core */}
-        <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
-        <Route path="/chat" element={<ProtectedRoute><Layout><Chat /></Layout></ProtectedRoute>} />
-        <Route path="/library" element={<ProtectedRoute><Layout><Library /></Layout></ProtectedRoute>} />
-        <Route path="/sqp" element={<ProtectedRoute><Layout><SQPBrowser /></Layout></ProtectedRoute>} />
+          {/* Core */}
+          <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
+          <Route path="/chat" element={<ProtectedRoute><Layout><Chat /></Layout></ProtectedRoute>} />
+          <Route path="/library" element={<ProtectedRoute><Layout><Library /></Layout></ProtectedRoute>} />
+          <Route path="/sqp" element={<ProtectedRoute><Layout><SQPBrowser /></Layout></ProtectedRoute>} />
 
-        {/* Admin */}
-        <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminUsers /></Layout></ProtectedRoute>} />
-        <Route path="/admin/documents" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminDocuments /></Layout></ProtectedRoute>} />
-        <Route path="/admin/system" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminSystem /></Layout></ProtectedRoute>} />
+          {/* Admin */}
+          <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminUsers /></Layout></ProtectedRoute>} />
+          <Route path="/admin/documents" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminDocuments /></Layout></ProtectedRoute>} />
+          <Route path="/admin/system" element={<ProtectedRoute allowedRoles={['admin']}><Layout><AdminSystem /></Layout></ProtectedRoute>} />
 
-        {/* Manager */}
-        <Route path="/manager/docs" element={<ProtectedRoute allowedRoles={['admin','manager']}><Layout><ManagerDocs /></Layout></ProtectedRoute>} />
-      </Routes>
-    </Router>
+          {/* Manager */}
+          <Route path="/manager/docs" element={<ProtectedRoute allowedRoles={['admin','manager']}><Layout><ManagerDocs /></Layout></ProtectedRoute>} />
+        </Routes>
+      </Router>
+    </ToastProvider>
   );
 }

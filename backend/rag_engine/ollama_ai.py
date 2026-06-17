@@ -58,7 +58,7 @@ class OllamaAI(LLMProviderInterface):
                 if cleaned and cleaned[-1]:
                     cleaned.append("")
                 continue
-            if line == previous:
+            if line == previous:    
                 continue
             cleaned.append(line)
             previous = line

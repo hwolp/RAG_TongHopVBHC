@@ -6,13 +6,16 @@ import {
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
 import { useConfirmDialog } from "../components/ConfirmDialog";
+import TagSelector, { TagList, appendTagIds, type DocumentTag } from "../components/TagSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -39,6 +42,7 @@ type AttachedDoc = {
   scope: string;
   is_indexed: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -75,6 +79,9 @@ export default function Chat() {
 
   // Session documents (uploaded to current session)
   const [sessionDocs, setSessionDocs] = useState<any[]>([]);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [selectedUploadTagIds, setSelectedUploadTagIds] = useState<number[]>([]);
 
   // Rename session
   const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -88,9 +95,9 @@ export default function Chat() {
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const waitingJobsRef = useRef<Set<number>>(new Set());
   const { confirm, confirmDialog } = useConfirmDialog();
+  const toast = useToast();
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -279,16 +286,16 @@ export default function Chat() {
   };
 
   // ── Upload file mới vào session ─────────────────────────────────────────────
-  const handleUploadForSession = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+  const handleUploadForSession = async () => {
+    const file = selectedUploadFile;
     if (!file) return;
     if (!activeSession) {
-      alert("Vui lòng chọn hoặc tạo session trước khi tải file.");
+      toast({ title: "Vui lòng chọn hoặc tạo session trước khi tải file" });
       return;
     }
     const formData = new FormData();
     formData.append("file", file);
+    appendTagIds(formData, selectedUploadTagIds);
     setUploading(true);
     try {
       const r = await api.post(
@@ -302,6 +309,9 @@ export default function Chat() {
           ? `✅ Đã tải file **"${file.name}"** vào session. Tài liệu đang chờ index nền.`
           : `✅ Đã tải file **"${file.name}"** vào session.`,
       }]);
+      setSelectedUploadFile(null);
+      setSelectedUploadTagIds([]);
+      setShowUploadDialog(false);
       // Fetch updated session documents
       if (activeSession) {
         await fetchSessionDocs(activeSession);
@@ -320,7 +330,7 @@ export default function Chat() {
   // ── Folder Tree Picker ──────────────────────────────────────────────────────
   const openPicker = async () => {
     if (!activeSession) {
-      alert("Vui lòng chọn hoặc tạo session trước.");
+      toast({ title: "Vui lòng chọn hoặc tạo session trước" });
       return;
     }
     setShowPicker(true);
@@ -358,7 +368,11 @@ export default function Chat() {
       if (r.data.index_job_id) void waitIndexJob(r.data.index_job_id, activeSession);
       requestAnimationFrame(scrollToBottom);
     } catch (err: any) {
-      alert("Lỗi đính kèm: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi đính kèm",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -376,7 +390,11 @@ export default function Chat() {
       // Refetch attachments to ensure data is in sync
       await fetchAttachments(activeSession);
     } catch (err: any) {
-      alert("Lỗi gỡ đính kèm: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi gỡ đính kèm",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -394,7 +412,11 @@ export default function Chat() {
       setSessionDocs([]);
       setShowPicker(false);
     } catch (err: any) {
-      alert("Không thể tạo phiên mới: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Không thể tạo phiên mới",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -436,8 +458,13 @@ export default function Chat() {
   // ── Render ──────────────────────────────────────────────────────────────────
   const attachedIds = new Set(attachedDocs.map(a => a.doc_id));
   const sourceNameById = new Map<string, string>();
+  const sourceTagsById = new Map<string, DocumentTag[]>();
   attachedDocs.forEach(doc => sourceNameById.set(String(doc.doc_id), doc.filename));
-  sessionDocs.forEach((doc: any) => sourceNameById.set(String(doc.id), doc.filename));
+  attachedDocs.forEach(doc => sourceTagsById.set(String(doc.doc_id), doc.tags ?? []));
+  sessionDocs.forEach((doc: any) => {
+    sourceNameById.set(String(doc.id), doc.filename);
+    sourceTagsById.set(String(doc.id), doc.tags ?? []);
+  });
 
   const sourceLabel = (source: unknown) => {
     const sourceId = String(source);
@@ -460,6 +487,45 @@ export default function Chat() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-transparent">
       {confirmDialog}
+      <Dialog
+        open={showUploadDialog}
+        onOpenChange={(open) => {
+          setShowUploadDialog(open);
+          if (!open && !uploading) {
+            setSelectedUploadFile(null);
+            setSelectedUploadTagIds([]);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload file vào session</DialogTitle>
+            <DialogDescription>Chọn file và gắn tag cho tài liệu trước khi đưa vào phiên chat.</DialogDescription>
+          </DialogHeader>
+          <label className="soft-panel flex cursor-pointer items-center justify-between gap-3 p-4 text-sm">
+            <span className="min-w-0 truncate text-muted-foreground">
+              {selectedUploadFile ? selectedUploadFile.name : "Chọn file từ máy tính"}
+            </span>
+            <span className="font-medium text-primary">Browse</span>
+            <input
+              type="file"
+              className="hidden"
+              accept=".pdf,.docx,.doc,.txt"
+              onChange={(event) => setSelectedUploadFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <TagSelector value={selectedUploadTagIds} onChange={setSelectedUploadTagIds} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowUploadDialog(false)} disabled={uploading}>
+              Hủy
+            </Button>
+            <Button type="button" onClick={() => void handleUploadForSession()} disabled={!selectedUploadFile || uploading}>
+              <Upload className="h-4 w-4" />
+              {uploading ? "Đang tải..." : "Upload file"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <aside className={cn("glass-sidebar flex shrink-0 flex-col border-r bg-card/65 transition-[width] duration-300", sessionsCollapsed ? "w-[4.5rem]" : "w-72")}>
         <div className="space-y-2 border-b p-3">
           <Button
@@ -540,12 +606,11 @@ export default function Chat() {
             <p className="truncate text-sm font-semibold">Trợ lý AI Hành Chính</p>
             <p className="truncate text-xs text-muted-foreground">{activeSession ? `Session #${activeSession}` : "Chọn hoặc tạo phiên để bắt đầu"}</p>
           </div>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={handleUploadForSession} />
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => setShowUploadDialog(true)}
             disabled={!activeSession || uploading}
             title="Tải file mới lên session"
             className="shrink-0"
@@ -595,11 +660,17 @@ export default function Chat() {
                         if (sources.length === 0) return null;
                         return (
                           <div className="mt-3 flex flex-wrap gap-1.5 border-t pt-3">
-                            {sources.map((source, index) => (
-                              <Badge key={`${String(source)}-${index}`} variant="outline" className="bg-background/60">
-                                {sourceLabel(source)}
-                              </Badge>
-                            ))}
+                            {sources.map((source, index) => {
+                              const sourceId = String(source);
+                              return (
+                                <div key={`${sourceId}-${index}`} className="flex flex-wrap items-center gap-1.5">
+                                  <Badge variant="outline" className="bg-background/60">
+                                    {sourceLabel(source)}
+                                  </Badge>
+                                  <TagList tags={sourceTagsById.get(sourceId)} />
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       } catch { return null; }
@@ -671,6 +742,7 @@ export default function Chat() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium">{a.filename}</p>
                         <p className="text-[11px] text-muted-foreground">{sessionDocStatusLabel(a)}</p>
+                        <TagList tags={a.tags} showEmpty className="mt-1" />
                       </div>
                       <Button type="button" variant="ghost" size="icon-sm" onClick={() => handleDetach(a.doc_id)} className="text-destructive">
                         <X className="h-3.5 w-3.5" />
@@ -688,6 +760,7 @@ export default function Chat() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium">{d.filename}</p>
                         <p className="text-[11px] text-muted-foreground">{sessionDocStatusLabel(d)}</p>
+                        <TagList tags={d.tags} showEmpty className="mt-1" />
                       </div>
                       <Button
                         type="button"
@@ -706,7 +779,11 @@ export default function Chat() {
                             await api.delete(`/chat/sessions/${activeSession}/documents/${d.id}`);
                             await fetchSessionDocs(activeSession);
                           } catch (err: any) {
-                            alert("Lỗi xóa file: " + (err.response?.data?.detail || err.message));
+                            toast({
+                              title: "Lỗi xóa file",
+                              description: err.response?.data?.detail || err.message,
+                              variant: "destructive",
+                            });
                           }
                         }}
                       >

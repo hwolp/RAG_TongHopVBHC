@@ -2,10 +2,18 @@ import { useState, useEffect } from "react";
 import api, { waitForJob } from "../api";
 import {
   Upload, Search, Send, RefreshCw, LayoutGrid, List,
-  FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X,
+  FileText, Trash2, BadgeCheck, Share2, Users, UserPlus, X, PencilLine,
 } from "lucide-react";
 import FolderTree, { type FolderDoc, type FolderTreeData } from "../components/FolderTree";
 import { useConfirmDialog } from "../components/ConfirmDialog";
+import TagSelector, { TagList, appendTagIds, type DocumentTag } from "../components/TagSelector";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/components/ui/toast";
 
 type Department = {
   id: number;
@@ -32,6 +40,7 @@ type Doc = {
   owner_id: number;
   is_indexed?: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type Proposal = {
@@ -51,6 +60,8 @@ export default function ManagerDocs() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "tree">("table");
   const [treeData, setTreeData] = useState<FolderTreeData | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
@@ -63,7 +74,13 @@ export default function ManagerDocs() {
   const [shareMode, setShareMode] = useState<"department" | "user">("department");
   const [sharing, setSharing] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [editingDoc, setEditingDoc] = useState<Doc | null>(null);
+  const [editFilename, setEditFilename] = useState("");
+  const [editTagIds, setEditTagIds] = useState<number[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
   const { confirm, confirmDialog } = useConfirmDialog();
+  const toast = useToast();
 
   const refreshShares = async () => {
     try {
@@ -136,14 +153,18 @@ export default function ManagerDocs() {
     }
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
+  const handleUpload = async () => {
+    if (!selectedUploadFile) return;
     setUploading(true);
     setJobMessage("");
     const fd = new FormData();
-    fd.append("file", e.target.files[0]);
+    fd.append("file", selectedUploadFile);
+    appendTagIds(fd, selectedTagIds);
     try {
       const r = await api.post("/manager/department/documents/upload", fd);
+      setSelectedUploadFile(null);
+      setSelectedTagIds([]);
+      setShowUploadDialog(false);
       await fetchDocs();
       if (viewMode === "tree") fetchTree();
       if (r.data.job_id) {
@@ -153,6 +174,31 @@ export default function ManagerDocs() {
       }
     } catch {}
     setUploading(false);
+  };
+
+  const openEdit = (doc: Doc) => {
+    setEditingDoc(doc);
+    setEditFilename(doc.filename);
+    setEditTagIds((doc.tags ?? []).map((tag) => tag.id));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingDoc) return;
+    setSavingEdit(true);
+    try {
+      const response = await api.put(`/manager/department/documents/${editingDoc.id}`, {
+        filename: editFilename,
+        tag_ids: editTagIds,
+      });
+      setEditingDoc(null);
+      await fetchDocs();
+      if (viewMode === "tree") await fetchTree();
+      if (response.data.job_id) {
+        void waitIndexJob(response.data.job_id);
+      }
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleDelete = async (id: number, _scope?: string) => {
@@ -173,9 +219,13 @@ export default function ManagerDocs() {
     try {
       await api.post(`/manager/sqp/propose/${docId}`);
       fetchProposals();
-      alert("Đã gửi đề xuất lên Admin!");
+      toast({ title: "Đã gửi đề xuất lên Admin", variant: "success" });
     } catch (err: any) {
-      alert("Lỗi: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi gửi đề xuất",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -197,7 +247,11 @@ export default function ManagerDocs() {
         setJobMessage(r.data.status === "already_indexed" ? "Tài liệu đã được index trước đó." : "Đã gửi yêu cầu index.");
       }
     } catch (err: any) {
-      alert("Lỗi index: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi index",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
     setIndexingId(null);
   };
@@ -215,9 +269,13 @@ export default function ManagerDocs() {
         await api.post(`/manager/share/document/${shareDocId}/to-user/${encodeURIComponent(shareTargetUsername.trim())}`);
       }
       await refreshShares();
-      alert("Đã chia sẻ tài liệu.");
+      toast({ title: "Đã chia sẻ tài liệu", variant: "success" });
     } catch (err: any) {
-      alert("Lỗi chia sẻ: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi chia sẻ",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
     setSharing(false);
   };
@@ -234,7 +292,11 @@ export default function ManagerDocs() {
       await api.delete(`/manager/share/${shareId}`);
       await refreshShares();
     } catch (err: any) {
-      alert("Lỗi hủy chia sẻ: " + (err.response?.data?.detail || err.message));
+      toast({
+        title: "Lỗi hủy chia sẻ",
+        description: err.response?.data?.detail || err.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -242,13 +304,6 @@ export default function ManagerDocs() {
 
   const renderIndexBadge = (doc: Doc) => {
     const status = doc.index_status || (doc.is_indexed ? "indexed" : "not_indexed");
-    const styles: Record<string, string> = {
-      indexed: "bg-green-100 text-green-700",
-      queued: "bg-amber-100 text-amber-700",
-      running: "bg-blue-100 text-blue-700",
-      failed: "bg-red-100 text-red-700",
-      not_indexed: "bg-gray-100 text-gray-500",
-    };
     const labels: Record<string, string> = {
       indexed: "Đã index",
       queued: "Chờ index",
@@ -256,48 +311,112 @@ export default function ManagerDocs() {
       failed: "Index lỗi",
       not_indexed: "Chưa index",
     };
-    return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status] || styles.not_indexed}`}>{labels[status] || labels.not_indexed}</span>;
+    const variant = status === "indexed" ? "success" : status === "queued" || status === "running" ? "warning" : status === "failed" ? "destructive" : "secondary";
+    return <Badge variant={variant}>{labels[status] || labels.not_indexed}</Badge>;
   };
 
   // Tree attach handler used as "propose" in FolderTree context
   const handleTreePropose = (doc: FolderDoc) => handlePropose(doc.id);
+  const fieldClass = "w-full rounded-lg border border-input bg-background/80 px-3 py-2.5 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring";
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
+    <div className="app-page max-w-6xl">
       {confirmDialog}
+      <Dialog
+        open={showUploadDialog}
+        onOpenChange={(open) => {
+          setShowUploadDialog(open);
+          if (!open && !uploading) {
+            setSelectedUploadFile(null);
+            setSelectedTagIds([]);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tải lên tài liệu phòng ban</DialogTitle>
+            <DialogDescription>Chọn file và gắn tag trước khi đưa vào kho phòng ban.</DialogDescription>
+          </DialogHeader>
+          <label className="soft-panel flex cursor-pointer items-center justify-between gap-3 p-4 text-sm">
+            <span className="truncate text-muted-foreground">{selectedUploadFile ? selectedUploadFile.name : "Chọn file..."}</span>
+            <span className="text-xs font-medium text-primary">Browse</span>
+            <input
+              type="file"
+              className="hidden"
+              onChange={(event) => setSelectedUploadFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <TagSelector value={selectedTagIds} onChange={setSelectedTagIds} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowUploadDialog(false)} disabled={uploading}>
+              Hủy
+            </Button>
+            <Button type="button" onClick={() => void handleUpload()} disabled={!selectedUploadFile || uploading}>
+              <Upload className="h-4 w-4" />
+              {uploading ? "Đang tải..." : "Tải lên"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(editingDoc)} onOpenChange={(open) => !open && setEditingDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa tài liệu phòng ban</DialogTitle>
+            <DialogDescription>Đổi tên file và cập nhật tag của tài liệu phòng ban.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={editFilename}
+            onChange={(event) => setEditFilename(event.target.value)}
+            placeholder="Tên file"
+          />
+          <TagSelector value={editTagIds} onChange={setEditTagIds} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setEditingDoc(null)}>
+              Hủy
+            </Button>
+            <Button type="button" onClick={() => void handleSaveEdit()} disabled={savingEdit}>
+              {savingEdit ? "Đang lưu..." : "Lưu thay đổi"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kho Tài Liệu Phòng Ban</h1>
-          <p className="text-gray-500 text-sm mt-1">Quản lý và đề xuất tài liệu lên kho công ty</p>
+          <h1 className="text-2xl font-bold">Kho Tài Liệu Phòng Ban</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Quản lý và đề xuất tài liệu lên kho công ty</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setViewMode("table")}
-            className={`p-2 rounded-lg border transition ${viewMode === "table" ? "bg-blue-600 text-white border-blue-600" : "text-gray-500 hover:bg-gray-100 border-gray-200"}`}
+          <Button type="button" variant={viewMode === "table" ? "default" : "outline"} size="icon"
+            onClick={() => setViewMode("table")}
             title="Xem dạng bảng">
             <LayoutGrid className="w-4 h-4" />
-          </button>
-          <button onClick={switchToTree}
-            className={`p-2 rounded-lg border transition ${viewMode === "tree" ? "bg-blue-600 text-white border-blue-600" : "text-gray-500 hover:bg-gray-100 border-gray-200"}`}
+          </Button>
+          <Button type="button" variant={viewMode === "tree" ? "default" : "outline"} size="icon"
+            onClick={switchToTree}
             title="Xem dạng cây thư mục">
             <List className="w-4 h-4" />
-          </button>
+          </Button>
 
-          <label className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer shadow-sm transition">
+          <Button
+            type="button"
+            onClick={() => setShowUploadDialog(true)}
+          >
             <Upload className="w-4 h-4" />
             {uploading ? "Đang tải..." : "Tải lên"}
-            <input type="file" className="hidden" onChange={handleUpload} />
-          </label>
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+        <Card className="glass-panel p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Share2 className="w-5 h-5 text-emerald-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Share2 className="w-5 h-5" />
+            </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Chia sẻ liên phòng</h2>
-              <p className="text-sm text-gray-500 mt-1">Chọn tài liệu phòng ban của bạn rồi chia sẻ sang phòng khác hoặc một tài khoản cụ thể.</p>
+              <h2 className="font-semibold">Chia sẻ liên phòng</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Chọn tài liệu phòng ban của bạn rồi chia sẻ sang phòng khác hoặc một tài khoản cụ thể.</p>
             </div>
           </div>
 
@@ -305,7 +424,7 @@ export default function ManagerDocs() {
             <select
               value={shareDocId}
               onChange={(event) => setShareDocId(event.target.value)}
-              className="w-full border rounded-lg px-3 py-2.5 text-sm"
+              className={fieldClass}
             >
               {docs.map((doc) => (
                 <option key={doc.id} value={doc.id}>
@@ -314,26 +433,30 @@ export default function ManagerDocs() {
               ))}
             </select>
 
-            <div className="flex rounded-lg border overflow-hidden text-sm">
-              <button
+            <div className="grid grid-cols-2 overflow-hidden rounded-lg border bg-background/60 text-sm">
+              <Button
+                type="button"
+                variant={shareMode === "department" ? "default" : "ghost"}
                 onClick={() => setShareMode("department")}
-                className={`flex-1 px-3 py-2 ${shareMode === "department" ? "bg-emerald-600 text-white" : "bg-white text-gray-600"}`}
+                className="rounded-none"
               >
                 Chia sẻ phòng ban
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant={shareMode === "user" ? "default" : "ghost"}
                 onClick={() => setShareMode("user")}
-                className={`flex-1 px-3 py-2 ${shareMode === "user" ? "bg-emerald-600 text-white" : "bg-white text-gray-600"}`}
+                className="rounded-none"
               >
                 Chia sẻ user
-              </button>
+              </Button>
             </div>
 
             {shareMode === "department" ? (
               <select
                 value={shareTargetDeptId}
                 onChange={(event) => setShareTargetDeptId(event.target.value)}
-                className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                className={fieldClass}
               >
                 {departments.map((department) => (
                   <option key={department.id} value={department.id}>
@@ -345,174 +468,191 @@ export default function ManagerDocs() {
               <input
                 value={shareTargetUsername}
                 onChange={(event) => setShareTargetUsername(event.target.value)}
-                className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                className={fieldClass}
                 placeholder="Nhập username người nhận"
               />
             )}
 
-            <button
+            <Button
+              type="button"
               onClick={() => void handleShare()}
               disabled={sharing || !shareDocId || (shareMode === "department" ? !shareTargetDeptId : !shareTargetUsername.trim())}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 disabled:opacity-60"
+              className="w-full"
             >
               <UserPlus className="w-4 h-4" />
               {sharing ? "Đang chia sẻ..." : "Gửi chia sẻ"}
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+        <Card className="glass-panel p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-blue-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Users className="w-5 h-5" />
+            </div>
             <div>
-              <h2 className="font-semibold text-gray-900">Chia sẻ của tôi</h2>
-              <p className="text-sm text-gray-500 mt-1">Theo dõi các lượt chia sẻ liên phòng đã tạo từ tài liệu phòng ban của mình.</p>
+              <h2 className="font-semibold">Chia sẻ của tôi</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Theo dõi các lượt chia sẻ liên phòng đã tạo từ tài liệu phòng ban của mình.</p>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600">Tài liệu</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-600">Chia sẻ tới</th>
-                  <th className="px-3 py-2 text-right font-semibold text-gray-600">Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="overflow-hidden rounded-lg border bg-background/50">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tài liệu</TableHead>
+                  <TableHead>Chia sẻ tới</TableHead>
+                  <TableHead className="text-right">Hành động</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {shares.map((share) => (
-                  <tr key={share.id} className="border-t">
-                    <td className="px-3 py-2 text-gray-700">{share.document_filename}</td>
-                    <td className="px-3 py-2 text-gray-600">
+                  <TableRow key={share.id}>
+                    <TableCell className="font-medium">{share.document_filename}</TableCell>
+                    <TableCell className="text-muted-foreground">
                       {share.shared_with_department_name ? `Phòng: ${share.shared_with_department_name}` : share.shared_with_username ? `User: ${share.shared_with_username}` : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => void handleRevokeShare(share.id)}
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs bg-red-50 text-red-600 hover:bg-red-100"
+                        className="text-destructive"
                       >
                         <X className="w-3.5 h-3.5" />
                         Hủy
-                      </button>
-                    </td>
-                  </tr>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ))}
                 {shares.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-gray-400">
+                  <TableRow>
+                    <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
                       Chưa có lượt chia sẻ nào
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Search + refresh (table mode) */}
       {jobMessage && (
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+        <Card className="glass-panel px-4 py-3 text-sm text-primary">
           {jobMessage}
-        </div>
+        </Card>
       )}
 
       {/* Search + refresh (table mode) */}
       {viewMode === "table" && (
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-            <input
+            <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+            <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && fetchDocs()}
-              className="w-full pl-10 pr-4 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="pl-10"
               placeholder="Tìm tài liệu phòng ban..."
             />
           </div>
-          <button onClick={fetchDocs}
-            className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm transition">
+          <Button type="button" variant="outline" onClick={fetchDocs}>
             Tìm
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Table View */}
       {viewMode === "table" && (
-        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold text-gray-600">Tên file</th>
-                <th className="px-4 py-3 text-left font-semibold text-gray-600">Trạng thái</th>
-                <th className="px-4 py-3 text-left font-semibold text-gray-600">Ngày tải</th>
-                <th className="px-4 py-3 text-right font-semibold text-gray-600">Hành động</th>
-              </tr>
-            </thead>
-            <tbody>
+        <Card className="glass-panel overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tên file</TableHead>
+                <TableHead>Trạng thái</TableHead>
+                <TableHead>Ngày tải</TableHead>
+                <TableHead className="text-right">Hành động</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {docs.map((d) => (
-                <tr key={d.id} className="border-b hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">
+                <TableRow key={d.id}>
+                  <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                      <span className="truncate max-w-xs" title={d.filename}>{d.filename}</span>
+                      <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                      <div className="min-w-0">
+                        <span className="block truncate max-w-xs" title={d.filename}>{d.filename}</span>
+                        <TagList tags={d.tags} showEmpty className="mt-1" />
+                      </div>
                     </div>
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell>
                     {renderIndexBadge(d)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{d.uploaded_at?.slice(0, 10)}</td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{d.uploaded_at?.slice(0, 10)}</TableCell>
+                  <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       {!d.is_indexed && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                           onClick={() => handleIndex(d.id)}
                           disabled={indexingId === d.id}
-                          className="px-2 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs hover:bg-purple-100 inline-flex items-center gap-1"
                           title="Index vào RAG"
                         >
                           <BadgeCheck className="w-3.5 h-3.5" />
                           {indexingId === d.id ? "Đang index..." : "Index RAG"}
-                        </button>
+                        </Button>
                       )}
                       {!proposedDocIds.has(d.id) ? (
-                        <button onClick={() => handlePropose(d.id)}
-                          className="px-2 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs hover:bg-green-100 inline-flex items-center gap-1">
+                        <Button type="button" variant="outline" size="sm" onClick={() => handlePropose(d.id)}
+                          className="text-emerald-700">
                           <Send className="w-3.5 h-3.5" /> Đề xuất SQP
-                        </button>
+                        </Button>
                       ) : (
-                        <span className="px-2 py-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg border border-amber-200">
+                        <Badge variant="warning">
                           Đã đề xuất
-                        </span>
+                        </Badge>
                       )}
-                      <button onClick={() => handleDelete(d.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-red-500">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEdit(d)}
+                      >
+                        <PencilLine className="w-3.5 h-3.5" /> Sửa
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon-sm" onClick={() => handleDelete(d.id)}
+                        className="text-destructive">
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-          {docs.length === 0 && <p className="text-center py-8 text-gray-400">Chưa có tài liệu phòng ban</p>}
-        </div>
+            </TableBody>
+          </Table>
+          {docs.length === 0 && <p className="text-center py-8 text-muted-foreground">Chưa có tài liệu phòng ban</p>}
+        </Card>
       )}
 
       {/* Tree View */}
       {viewMode === "tree" && (
-        <div className="bg-white rounded-xl border shadow-sm p-4">
+        <Card className="glass-panel p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-700">Cây thư mục tài liệu</h2>
-            <button onClick={fetchTree} disabled={treeLoading}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition">
+            <h2 className="text-sm font-semibold">Cây thư mục tài liệu</h2>
+            <Button type="button" variant="ghost" size="sm" onClick={fetchTree} disabled={treeLoading}>
               <RefreshCw className={`w-3.5 h-3.5 ${treeLoading ? "animate-spin" : ""}`} />
               Làm mới
-            </button>
+            </Button>
           </div>
 
           {treeLoading && (
-            <div className="flex items-center justify-center py-12 text-gray-400 gap-2">
+            <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
               <RefreshCw className="w-5 h-5 animate-spin" />
               <span>Đang tải...</span>
             </div>
@@ -529,18 +669,18 @@ export default function ManagerDocs() {
           )}
 
           {!treeLoading && !treeData && (
-            <p className="text-center py-8 text-gray-400 text-sm">Không thể tải dữ liệu</p>
+            <p className="text-center py-8 text-muted-foreground text-sm">Không thể tải dữ liệu</p>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Proposals */}
       {proposals.length > 0 && (
-        <div className="bg-white rounded-xl border shadow-sm p-6">
-          <h3 className="font-semibold mb-3 text-gray-800">Đề Xuất Của Bạn</h3>
+        <Card className="glass-panel p-6">
+          <h3 className="mb-3 font-semibold">Đề Xuất Của Bạn</h3>
           <div className="space-y-2">
             {proposals.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+              <div key={p.id} className="soft-panel flex items-center justify-between p-3">
                 <span className="text-sm">
                   Tài liệu #{p.document_id} —{" "}
                   <strong className={
@@ -554,15 +694,15 @@ export default function ManagerDocs() {
                   </strong>
                 </span>
                 {p.status === "pending" && (
-                  <button onClick={() => handleCancelProposal(p.id)}
-                    className="text-xs text-red-500 hover:underline">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => handleCancelProposal(p.id)}
+                    className="text-destructive">
                     Hủy
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

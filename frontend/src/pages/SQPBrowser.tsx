@@ -3,6 +3,7 @@ import api, { waitForJob } from "../api";
 import { BookOpen, Search, Download, FileText, RefreshCw, Upload, PencilLine, Trash2 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useConfirmDialog } from "../components/ConfirmDialog";
+import TagSelector, { TagList, appendTagIds, type DocumentTag } from "../components/TagSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +19,7 @@ type SQPDocument = {
   owner_id?: number | null;
   is_indexed?: boolean;
   index_status?: "indexed" | "not_indexed" | "queued" | "running" | "failed";
+  tags?: DocumentTag[];
 };
 
 type JobResponse = {
@@ -35,8 +37,10 @@ export default function SQPBrowser() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [editingDoc, setEditingDoc] = useState<SQPDocument | null>(null);
   const [editFilename, setEditFilename] = useState("");
+  const [editTagIds, setEditTagIds] = useState<number[]>([]);
   const [jobMessage, setJobMessage] = useState("");
   const { confirm, confirmDialog } = useConfirmDialog();
 
@@ -85,8 +89,10 @@ export default function SQPBrowser() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      appendTagIds(formData, selectedTagIds);
       const response = await api.post("/documents/sqp", formData, { headers: { "Content-Type": "multipart/form-data" } });
       setSelectedFile(null);
+      setSelectedTagIds([]);
       await fetchDocs();
       if (response.data.job_id) {
         void waitIndexJob(response.data.job_id);
@@ -114,13 +120,17 @@ export default function SQPBrowser() {
   const openEdit = (doc: SQPDocument) => {
     setEditingDoc(doc);
     setEditFilename(doc.filename);
+    setEditTagIds((doc.tags ?? []).map((tag) => tag.id));
   };
 
   const handleSaveEdit = async () => {
     if (!editingDoc) return;
-    await api.put(`/documents/sqp/${editingDoc.id}`, { filename: editFilename });
+    const response = await api.put(`/documents/sqp/${editingDoc.id}`, { filename: editFilename, tag_ids: editTagIds });
     setEditingDoc(null);
     await fetchDocs();
+    if (response.data.job_id) {
+      void waitIndexJob(response.data.job_id);
+    }
   };
 
   const handleDelete = async (docId: number) => {
@@ -175,6 +185,7 @@ export default function SQPBrowser() {
               {uploading ? "Đang tải lên..." : "Tải lên"}
             </Button>
           </div>
+          <TagSelector value={selectedTagIds} onChange={setSelectedTagIds} />
           {uploading && <Progress value={65} />}
         </Card>
       )}
@@ -212,7 +223,10 @@ export default function SQPBrowser() {
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-3">
                   <div className="p-2 bg-amber-50 rounded-lg"><BookOpen className="w-5 h-5 text-amber-600" /></div>
-                  <span>{d.filename}</span>
+                  <div className="min-w-0">
+                    <span className="block truncate">{d.filename}</span>
+                    <TagList tags={d.tags} showEmpty className="mt-1" />
+                  </div>
                   </div>
                 </TableCell>
                 <TableCell>{renderIndexBadge(d)}</TableCell>
@@ -257,6 +271,7 @@ export default function SQPBrowser() {
               onChange={(event) => setEditFilename(event.target.value)}
               placeholder="Tên file"
             />
+            <TagSelector value={editTagIds} onChange={setEditTagIds} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setEditingDoc(null)}>
                 Hủy

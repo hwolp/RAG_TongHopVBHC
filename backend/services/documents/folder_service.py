@@ -7,6 +7,7 @@ from repositories.chat_repository import ChatRepository
 from repositories.department_repository import DepartmentRepository
 from repositories.document_repository import DocumentRepository
 from repositories.job_repository import BackgroundJobRepository
+from repositories.tag_repository import TagRepository
 from repositories.user_repository import UserRepository
 from services.documents.document_service import DocumentIndexCoordinator
 from services.jobs import job_service
@@ -28,6 +29,10 @@ def _doc_to_dict(db: Session, doc: models.Document) -> dict:
         "uploaded_at": str(doc.uploaded_at),
         "owner_id": doc.owner_id,
         "department_id": doc.department_id,
+        "tags": [
+            {"id": tag.id, "name": tag.name}
+            for tag in TagRepository(db).list_for_document(doc.id)
+        ],
     }
 
 
@@ -200,5 +205,9 @@ def list_session_attachments(db: Session, user_id: int, session_id: int) -> list
                 "scope": enum_value(doc.scope),
                 "is_indexed": doc.is_indexed,
                 "index_status": _index_status(db, doc),
+                "tags": [
+                    {"id": tag.id, "name": tag.name}
+                    for tag in TagRepository(db).list_for_document(doc.id)
+                ],
             })
     return result

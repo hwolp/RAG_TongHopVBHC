@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { TagList, type DocumentTag } from "./TagSelector";
 
 export type FolderDoc = {
   id: number;
@@ -29,6 +30,7 @@ export type FolderDoc = {
   uploaded_at: string;
   owner_id?: number;
   department_id?: number;
+  tags?: DocumentTag[];
 };
 
 export type FolderTreeData = {
@@ -141,6 +143,7 @@ function DocRow({
       <div className="min-w-0 flex-1">
         <p className="break-all text-xs font-medium leading-5 text-foreground">{doc.filename}</p>
         <p className="text-[10px] text-muted-foreground">{doc.uploaded_at.slice(0, 10)}</p>
+        <TagList tags={doc.tags} className="mt-1" />
       </div>
 
       <IndexBadge doc={doc} />

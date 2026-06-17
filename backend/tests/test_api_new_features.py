@@ -333,10 +333,16 @@ def test_document_trash_restore_and_version_flow(tmp_path):
 def test_personal_upload_uses_user_scoped_unique_paths(tmp_path, monkeypatch):
     client, db, current_user = _client_and_db()
     monkeypatch.setattr(document_service, "UPLOAD_DIR_PERSONAL", str(tmp_path / "personal"))
+    db.add_all([
+        models.Tag(id=101, name="Nhân sự"),
+        models.Tag(id=102, name="Tài chính"),
+    ])
+    db.commit()
 
     current_user.update({"id": 3, "role": "employee", "sub": "employee"})
     first_upload = client.post(
         "/documents/personal",
+        data={"tag_ids": ["101", "102"]},
         files={"file": ("same.txt", io.BytesIO(b"employee file"), "text/plain")},
     )
     assert first_upload.status_code == 200
@@ -359,6 +365,10 @@ def test_personal_upload_uses_user_scoped_unique_paths(tmp_path, monkeypatch):
     assert os.path.basename(os.path.dirname(second_doc.file_path)) == "user_2"
     assert open(first_doc.file_path, "rb").read() == b"employee file"
     assert open(second_doc.file_path, "rb").read() == b"manager file"
+    assert {
+        link.tag_id
+        for link in db.query(models.DocumentTag).filter(models.DocumentTag.document_id == first_doc_id)
+    } == {101, 102}
 
     current_user.update({"id": 3, "role": "employee", "sub": "employee"})
     listed = client.get("/documents/personal")
@@ -366,6 +376,23 @@ def test_personal_upload_uses_user_scoped_unique_paths(tmp_path, monkeypatch):
     listed_ids = {item["id"] for item in listed.json()}
     assert first_doc_id in listed_ids
     assert second_doc_id not in listed_ids
+    first_item = next(item for item in listed.json() if item["id"] == first_doc_id)
+    assert {tag["name"] for tag in first_item["tags"]} == {"Nhân sự", "Tài chính"}
+
+    updated = client.put(
+        f"/employee/documents/{first_doc_id}",
+        json={"filename": "renamed.txt", "tag_ids": [101]},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["filename"] == "renamed.txt"
+
+    db.refresh(first_doc)
+    assert first_doc.filename == "renamed.txt"
+    assert os.path.basename(first_doc.file_path) == "renamed.txt"
+    assert {
+        link.tag_id
+        for link in db.query(models.DocumentTag).filter(models.DocumentTag.document_id == first_doc_id)
+    } == {101}
 
 
 def test_chat_citation_and_execute_prompt(monkeypatch):
@@ -466,4 +493,3 @@ def test_deleted_document_cannot_be_attached():
 
     attached = client.post("/chat/sessions/20/attach", json={"doc_id": 10})
     assert attached.status_code == 404
-
